@@ -1,0 +1,8 @@
+category,clause_type,keyword_patterns,severity_deduction,dispute_reason
+Insurance,Room Rent Cap,room rent|proportionate deduction|icu charges limit,15,Sub-limits trigger proportionate deductions across all hospital bills.
+Insurance,Pre-Existing Diseases Waiting Period,waiting period|pre-existing|ped,10,Long waiting periods (3-4 years) frequently lead to rejected early claims.
+Insurance,Co-Payment,co-pay|copayment|mandatory co-pay,10,Requires policyholders to pay a direct percentage out-of-pocket on claim settlement.
+Insurance,Specific Illness Moratorium,24 months waiting|two year exclusion|hernia|cataract,5,Standard procedures excluded within initial policy active cycles.
+Lending,Prepayment Penalty,prepayment penalty|foreclosure charges|early repayment,15,Penalizes borrowers for early principal settlements on floating/fixed loans.
+Lending,Processing Fee Non-Refundable,processing fee|administrative charge|non-refundable,5,Charged upfront even if the loan amount is not disbursed or canceled.
+Fintech,Exit Load,exit load|redemption fee|contingent deferred,5,Hidden charges applied if investments are liquidated before the minimum term.
