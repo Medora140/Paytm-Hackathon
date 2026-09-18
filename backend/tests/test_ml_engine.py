@@ -249,9 +249,12 @@ def test_wired_api_endpoints():
     """
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.ingestion.repository import repository
+    from app.ml.mock_data import SYNTHETIC_MUTUAL_FUND_CHUNKS
     
     client = TestClient(app)
     doc_id = "test_mf_doc_01"
+    repository.save_chunks(doc_id, SYNTHETIC_MUTUAL_FUND_CHUNKS)
     
     # Summary
     sum_resp = client.get(f"/documents/{doc_id}/summary")

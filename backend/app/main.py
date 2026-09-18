@@ -1,6 +1,8 @@
 ﻿import os
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from app.errors import ChunksNotFoundError, GeminiUnavailableError
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
@@ -33,6 +35,22 @@ app.include_router(ingestion.router)
 app.include_router(ml.router)
 app.include_router(scraping.router)
 app.include_router(webhooks.router)
+
+
+@app.exception_handler(ChunksNotFoundError)
+async def chunks_not_found_handler(_request: Request, exc: ChunksNotFoundError):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": str(exc), "document_id": exc.document_id, "reason": exc.reason},
+    )
+
+
+@app.exception_handler(GeminiUnavailableError)
+async def gemini_unavailable_handler(_request: Request, exc: GeminiUnavailableError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc), "reason": exc.reason},
+    )
 
 
 @app.get("/health", tags=["Health & Monitoring"])

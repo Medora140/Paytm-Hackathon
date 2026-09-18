@@ -1,7 +1,12 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 from app.schemas import ConfidenceScoreResponse, ScoreBreakdownItem, SeverityLevel
+
+logger = logging.getLogger("app.ml.confidence_score")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 # §3 weights: high = 15, medium = 8, low = 3
 SEVERITY_WEIGHTS = {
@@ -41,6 +46,13 @@ def calculate_confidence_score(
     # 2. Red Flag Deductions
     for flag in red_flags:
         severity = flag.severity
+        if severity not in SEVERITY_WEIGHTS:
+            logger.warning(
+                "[FALLBACK WARNING] [confidence_score] Unrecognized severity '%s' on flag '%s' for doc '%s'. Defaulting weight to 8.",
+                severity,
+                getattr(flag, "id", "unknown"),
+                document_id
+            )
         weight = SEVERITY_WEIGHTS.get(severity, 8)
         total_deductions += weight
         

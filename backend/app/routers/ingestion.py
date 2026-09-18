@@ -10,6 +10,7 @@ from app.schemas import (
     DocumentType,
     DocumentUploadResponse,
 )
+from app.identity import DEMO_USER_ID
 from app.ingestion.repository import repository
 from app.ingestion.pipeline import get_ingestion_pipeline
 
@@ -29,9 +30,9 @@ async def upload_document(
     """
     file_bytes = await file.read()
     filename = file.filename or "uploaded_document.pdf"
-    doc_id = f"doc_{uuid.uuid4()}"
+    doc_id = str(uuid.uuid4())
     doc_type = document_type or DocumentType.HEALTH_INSURANCE
-    user_id = "usr_0191eb5a-73d8-7910-b9df-20cb558b9190"
+    user_id = DEMO_USER_ID
 
     pipeline = get_ingestion_pipeline()
     storage_path = pipeline.storage_mgr.store_file(doc_id, filename, file_bytes)
@@ -75,7 +76,7 @@ async def list_documents() -> List[DocumentListItem]:
         items.append(
             DocumentListItem(
                 id=d["id"],
-                user_id=d.get("user_id", "usr_0191eb5a-73d8-7910-b9df-20cb558b9190"),
+                user_id=d.get("user_id", DEMO_USER_ID),
                 filename=d["filename"],
                 document_type=DocumentType(d.get("document_type", "health_insurance")),
                 status=DocumentStatus(d.get("status", "uploaded")),
@@ -101,7 +102,7 @@ async def get_document_metadata_and_status(id: str) -> DocumentDetailResponse:
 
     return DocumentDetailResponse(
         id=doc["id"],
-        user_id=doc.get("user_id", "usr_0191eb5a-73d8-7910-b9df-20cb558b9190"),
+        user_id=doc.get("user_id", DEMO_USER_ID),
         filename=doc["filename"],
         document_type=DocumentType(doc.get("document_type", "health_insurance")),
         storage_path=doc["storage_path"],

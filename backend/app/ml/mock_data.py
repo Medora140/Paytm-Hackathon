@@ -1,5 +1,9 @@
+import logging
 from typing import Any, Dict, List, Optional
 from app.db import get_db
+from app.errors import ChunksNotFoundError
+
+logger = logging.getLogger("app.ml.chunk_resolver")
 
 SYNTHETIC_MUTUAL_FUND_CHUNKS: List[Dict[str, Any]] = [
     {
@@ -111,67 +115,90 @@ MOCK_HEALTH_INSURANCE_CHUNKS: List[Dict[str, Any]] = [
 
 def get_chunks_for_document(document_id: str) -> List[Dict[str, Any]]:
     """
-    Retrieves document chunks.
-    1. Checks repository memory cache (where Agent A ingestion stores real extracted chunks)
-    2. Checks Supabase database 'document_chunks' table if available
-    3. Falls back to matching mock fixtures with loud visible logging
+    Retrieves document chunks from the ingestion repository, then Supabase.
+    Does not serve mock fixtures — missing chunks are a hard error.
     """
     # 1. Check repository cache first
     try:
         from app.ingestion.repository import repository
         repo_chunks = repository.get_chunks(document_id)
         if repo_chunks and len(repo_chunks) > 0:
-            print(f"[CHUNK RESOLVER] Loaded {len(repo_chunks)} real extracted chunks from Ingestion Repository for doc '{document_id}'.")
+            logger.info(
+                "Loaded %s real extracted chunks from Ingestion Repository for doc '%s'.",
+                len(repo_chunks),
+                document_id,
+            )
             return repo_chunks
     except Exception as e:
-        print(f"[CHUNK RESOLVER] Repository check failed: {e}")
+        logger.warning(
+            "\n" + "=" * 68 + "\n"
+            "[FALLBACK WARNING] [mock_data] Ingestion repository check failed for doc '%s'!\n"
+            "Reason: %s: %s\n"
+            "Action: Proceeding to check database storage.\n"
+            + "=" * 68,
+            document_id,
+            type(e).__name__,
+            e
+        )
 
     # 2. Check Supabase DB
     db = get_db()
-    fallback_reason = "Unknown"
-    
     if db is None:
-        fallback_reason = "db client is None"
-    else:
-        try:
-            res = db.table("document_chunks").select("*").eq("document_id", document_id).execute()
-            data = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else None)
-            if data and len(data) > 0:
-                print(f"[CHUNK RESOLVER] Loaded {len(data)} real document_chunks from Supabase for doc '{document_id}'.")
-                chunks = []
-                for row in data:
-                    chunks.append({
-                        "id": str(row.get("id")),
-                        "page_number": int(row.get("page_number", 1)),
-                        "clause_label": row.get("clause_label") or f"Clause (Page {row.get('page_number', 1)})",
-                        "text": row.get("text", "")
-                    })
-                return chunks
-            else:
-                fallback_reason = f"Supabase document_chunks query succeeded but returned 0 rows for doc '{document_id}'"
-        except Exception as e:
-            fallback_reason = f"Supabase query failed with exception: {type(e).__name__}: {e}"
+        reason = "Database client (db) is None"
+        logger.warning(
+            "\n" + "=" * 68 + "\n"
+            "[FALLBACK WARNING] [mock_data] Database client is None for doc '%s'!\n"
+            "Reason: %s\n"
+            + "=" * 68,
+            document_id,
+            reason
+        )
+        raise ChunksNotFoundError(document_id, reason)
 
-    # 3. Check document metadata to select correct mock fixture if fallback is needed
-    chosen_category = "health_insurance"
+    if db.__class__.__name__ == "StubSupabaseClient":
+        reason = "Supabase client is a stub and no in-memory repository chunks exist for this document"
+        logger.warning(
+            "\n" + "=" * 68 + "\n"
+            "[FALLBACK WARNING] [mock_data] Stub database client in use without repository chunks for doc '%s'!\n"
+            "Reason: %s\n"
+            + "=" * 68,
+            document_id,
+            reason
+        )
+        raise ChunksNotFoundError(document_id, reason)
+
     try:
-        from app.ingestion.repository import repository
-        doc_meta = repository.get_document(document_id)
-        if doc_meta and doc_meta.get("document_type"):
-            raw_type = doc_meta["document_type"]
-            chosen_category = raw_type.value.lower() if hasattr(raw_type, "value") else str(raw_type).lower()
-    except Exception:
-        pass
+        res = db.table("document_chunks").select("*").eq("document_id", document_id).execute()
+        data = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else None)
+        if data and len(data) > 0:
+            logger.info(
+                "Loaded %s real document_chunks from Supabase for doc '%s'.",
+                len(data),
+                document_id,
+            )
+            chunks = []
+            for row in data:
+                chunks.append({
+                    "id": str(row.get("id")),
+                    "page_number": int(row.get("page_number", 1)),
+                    "clause_label": row.get("clause_label") or f"Clause (Page {row.get('page_number', 1)})",
+                    "text": row.get("text", "")
+                })
+            return chunks
+        reason = f"Supabase document_chunks query succeeded but returned 0 rows for doc '{document_id}'"
+    except ChunksNotFoundError:
+        raise
+    except Exception as e:
+        reason = f"Supabase query failed with exception: {type(e).__name__}: {e}"
 
-    doc_lower = document_id.lower()
-    if chosen_category == "mutual_fund" or "mf" in doc_lower or "fund" in doc_lower or "hdfc" in doc_lower:
-        chosen_fixture = "SYNTHETIC_MUTUAL_FUND_CHUNKS"
-        fixture_data = list(SYNTHETIC_MUTUAL_FUND_CHUNKS)
-    else:
-        chosen_fixture = "MOCK_HEALTH_INSURANCE_CHUNKS (Wave 0 default)"
-        fixture_data = list(MOCK_HEALTH_INSURANCE_CHUNKS)
-
-    print(f"[FALLBACK ALERT] [chunk_resolver] Serving {chosen_fixture} ({len(fixture_data)} chunks) for doc '{document_id}'. Reason: {fallback_reason}.")
-    return fixture_data
+    logger.warning(
+        "\n" + "=" * 68 + "\n"
+        "[FALLBACK WARNING] [mock_data] Chunks could not be found for doc '%s'!\n"
+        "Reason: %s\n"
+        + "=" * 68,
+        document_id,
+        reason
+    )
+    raise ChunksNotFoundError(document_id, reason)
 
 

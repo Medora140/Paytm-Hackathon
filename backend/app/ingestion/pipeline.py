@@ -1,6 +1,7 @@
 import uuid
 import logging
 from typing import Any, Dict, Optional
+from app.identity import DEMO_USER_ID
 from app.schemas import DocumentStatus, DocumentType
 from app.ingestion.storage import StorageManager
 from app.ingestion.detector import PDFTypeDetector
@@ -62,13 +63,13 @@ class IngestionPipeline:
         file_bytes: bytes,
         filename: str,
         document_type: DocumentType = DocumentType.HEALTH_INSURANCE,
-        user_id: str = "usr_0191eb5a-73d8-7910-b9df-20cb558b9190",
+        user_id: str = DEMO_USER_ID,
         doc_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Executes the complete document ingestion pipeline synchronously.
         """
-        doc_id = doc_id or f"doc_{uuid.uuid4()}"
+        doc_id = doc_id or str(uuid.uuid4())
 
         try:
             # Stage 1: Store raw file in object storage

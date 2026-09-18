@@ -5,12 +5,15 @@ import logging
 
 try:
     from app.db import get_db, db_helper
+    from app.runtime_flags import allow_in_memory_stores
 except ImportError:
     try:
         from backend.app.db import get_db, db_helper
+        from backend.app.runtime_flags import allow_in_memory_stores
     except ImportError:
         get_db = None
         db_helper = None
+        def allow_in_memory_stores(): return False
 
 logger = logging.getLogger("ScrapeRepository")
 
@@ -18,14 +21,14 @@ logger = logging.getLogger("ScrapeRepository")
 class ScrapeRepository:
     """
     Database access layer for benchmark_products and scrape_jobs.
-    Supports live Supabase operations with automatic fallback to
-    in-memory storage during tests or development offline mode.
+    Live environment directly targets Supabase PostgreSQL tables.
+    In-memory storage is restricted to explicit test execution.
     """
 
     def __init__(self, in_memory: bool = False):
         client = get_db() if get_db else None
         is_stub = client is None or client.__class__.__name__ == "StubSupabaseClient"
-        self.in_memory = in_memory or not (db_helper and db_helper.is_configured) or is_stub
+        self.in_memory = in_memory or (allow_in_memory_stores() and (not (db_helper and db_helper.is_configured) or is_stub))
         self._memory_benchmark_products: List[Dict[str, Any]] = []
         self._memory_scrape_jobs: List[Dict[str, Any]] = []
 

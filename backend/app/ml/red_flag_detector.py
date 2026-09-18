@@ -1,9 +1,14 @@
+import logging
 import re
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from app.schemas import RedFlagItem, SeverityLevel
 from app.ml.knowledge_base import RedFlagKnowledgeBase, RedFlagPattern
+
+logger = logging.getLogger("app.ml.red_flag_detector")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 
 class RuleBasedRedFlagDetector:
@@ -26,6 +31,16 @@ class RuleBasedRedFlagDetector:
         Scans document chunks for high-risk clauses and dispute patterns.
         Attaches exact chunk citations, page numbers, severity, and plain explanations.
         """
+        if not chunks:
+            logger.warning(
+                "\n" + "=" * 68 + "\n"
+                "[FALLBACK WARNING] [red_flag_detector] detect_red_flags called with empty chunks for doc '%s'!\n"
+                "Action: Returning empty red flags list.\n"
+                + "=" * 68,
+                document_id
+            )
+            return []
+
         patterns = self.kb.get_patterns(category=category)
         flags: List[RedFlagItem] = []
         matched_chunk_patterns = set()

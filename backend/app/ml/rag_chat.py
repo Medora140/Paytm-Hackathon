@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import uuid
@@ -6,6 +7,16 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 from app.schemas import ChatResponse, CitationItem
+from app.ml.gemini_client import (
+    get_gemini_client,
+    get_last_gemini_error,
+    probe_gemini_connectivity,
+    generate_gemini_content,
+)
+
+logger = logging.getLogger("app.ml.rag_chat")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
@@ -44,36 +55,9 @@ class GroundedRAGChat:
     def __init__(self, gemini_api_key: Optional[str] = None):
         self.api_key = gemini_api_key or GEMINI_API_KEY
 
-    _client_instance = None
-    _connectivity_checked = False
-    _is_connected = False
-
     def _get_client(self):
-        if not self.api_key:
-            print("[FALLBACK] [rag_chat] Reason: GEMINI_API_KEY is completely missing/empty in environment.")
-            return None
-
-        if GroundedRAGChat._connectivity_checked:
-            return GroundedRAGChat._client_instance if GroundedRAGChat._is_connected else None
-
-        GroundedRAGChat._connectivity_checked = True
-        try:
-            from google import genai
-            client = genai.Client(api_key=self.api_key)
-            # Lightweight connectivity check
-            client.models.generate_content(
-                model=MODEL_NAME,
-                contents="ping",
-                config={"max_output_tokens": 1}
-            )
-            GroundedRAGChat._client_instance = client
-            GroundedRAGChat._is_connected = True
-            print(f"[GEMINI CONNECTIVITY] Live Gemini API connection verified in RAG chat using model '{MODEL_NAME}'.")
-            return client
-        except Exception as e:
-            GroundedRAGChat._is_connected = False
-            print(f"[FALLBACK] [rag_chat] Real Gemini connectivity check failed: {type(e).__name__}: {e}")
-            return None
+        """Returns the cached verified Gemini client instance, or None if unavailable."""
+        return get_gemini_client(api_key=self.api_key)
 
 
 
@@ -149,6 +133,8 @@ class GroundedRAGChat:
 
         # 3. Formulate Prompt & Call Gemini
         client = self._get_client()
+        last_error = get_last_gemini_error() or "Gemini client unavailable or offline"
+
         if client is not None:
             try:
                 from google.genai import types
@@ -174,8 +160,15 @@ DOCUMENT CHUNKS:
 USER QUESTION:
 {question}
 """
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
+                logger.info(
+                    "[LIVE GEMINI CALL] [rag_chat] Initiating live Gemini RAG chat (model=%s, doc_id=%s, question='%s')...",
+                    MODEL_NAME,
+                    document_id,
+                    question[:50]
+                )
+
+                response, used_model = generate_gemini_content(
+                    client=client,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -210,6 +203,7 @@ USER QUESTION:
 
                 result_data = json.loads(response.text)
                 if not result_data.get("found_in_document", True) or "not found" in result_data.get("answer", "").lower():
+                    logger.info("[RAG GUARDRAIL] [rag_chat] Live response indicates question is unsupported by chunks for doc '%s'.", document_id)
                     return ChatResponse(
                         id=f"msg_{uuid.uuid4().hex[:12]}",
                         document_id=document_id,
@@ -236,6 +230,13 @@ USER QUESTION:
                 if not cited_ids and citations:
                     cited_ids = [c.chunk_id for c in citations]
 
+                logger.info(
+                    "[LIVE GEMINI SUCCESS] [rag_chat] Successfully generated live RAG response for doc '%s' (model=%s, cited_chunks=%d)",
+                    document_id,
+                    MODEL_NAME,
+                    len(cited_ids)
+                )
+
                 return ChatResponse(
                     id=f"msg_{uuid.uuid4().hex[:12]}",
                     document_id=document_id,
@@ -247,15 +248,39 @@ USER QUESTION:
                 )
 
             except Exception as e:
-                print(f"[FALLBACK ALERT] [rag_chat] Gemini call threw exception: {type(e).__name__}: {e}")
+                last_error = f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "\n" + "=" * 68 + "\n"
+                    "[FALLBACK WARNING] [rag_chat] Live Gemini RAG call FAILED for doc '%s'!\n"
+                    "Reason: %s: %s\n"
+                    "Model: %s\n"
+                    "Action: Falling back to deterministic extracted chunk response.\n"
+                    + "=" * 68,
+                    document_id,
+                    type(e).__name__,
+                    e,
+                    MODEL_NAME
+                )
 
         # 4. Fallback deterministic answering from relevant chunks
-        print(f"[FALLBACK ALERT] [rag_chat] Serving deterministic extracted chunk response for doc '{document_id}' (query: '{question[:40]}...').")
         top_chunk = relevant_chunks[0]
-
         page_num = top_chunk["page_number"]
         label = top_chunk.get("clause_label", f"Page {page_num}")
         quote_text = top_chunk["text"][:160] + "..."
+
+        logger.warning(
+            "\n" + "=" * 68 + "\n"
+            "[FALLBACK WARNING] [rag_chat] Serving fallback deterministic extracted chunk response for doc '%s'!\n"
+            "Reason: %s\n"
+            "Query: '%s'\n"
+            "Action: Extracting grounded quote from top chunk ID '%s' (Page %s).\n"
+            + "=" * 68,
+            document_id,
+            last_error,
+            question[:80],
+            top_chunk["id"],
+            page_num
+        )
 
         return ChatResponse(
             id=f"msg_{uuid.uuid4().hex[:12]}",
