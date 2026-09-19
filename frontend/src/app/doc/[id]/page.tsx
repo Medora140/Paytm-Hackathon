@@ -61,20 +61,39 @@ export default function DocumentDashboardPage({
 
   const loadAnalysisData = async (docMeta: DocumentDetailResponse, currentLanguage = lang) => {
     try {
-      const [sumRes, flagsRes, scoreRes] = await Promise.all([
+      const [sumResult, flagsResult, scoreResult] = await Promise.allSettled([
         getSummary(docId, currentLanguage),
         getRedFlags(docId),
         getConfidenceScore(docId),
       ]);
+
+      const sumRes = sumResult.status === "fulfilled" ? sumResult.value : null;
+      const flagsRes = flagsResult.status === "fulfilled" ? flagsResult.value : null;
+      const scoreRes = scoreResult.status === "fulfilled" ? scoreResult.value : null;
+
+      if (!sumRes || !flagsRes || !scoreRes) {
+        console.warn("Analysis data incomplete, retrying in the next poll...", {
+          sumResult,
+          flagsResult,
+          scoreResult,
+        });
+        setIsProcessing(true);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
       setSummary(sumRes);
       setRedFlagsData(flagsRes);
       setScoreData(scoreRes);
       setIsProcessing(false);
       setLoading(false);
+      setError(null);
     } catch (err: any) {
       console.warn("Analysis data still compiling, will retry...", err);
-      // If chunks aren't ready yet, stay in processing mode
       setIsProcessing(true);
+      setError(null);
+      setLoading(false);
     }
   };
 

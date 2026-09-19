@@ -86,27 +86,51 @@ export default function ChatPage({
 
     try {
       const response = await sendChatMessage(docId, question, lang);
+      const content =
+        typeof response?.content === "string" && response.content.trim()
+          ? response.content
+          : lang === "hi"
+            ? "मैंने दस्तावेज़ के आधार पर उत्तर देने की कोशिश की, लेकिन इस समय कोई ठोस उत्तर उपलब्ध नहीं था। कृपया कुछ सेकंड बाद पुनः प्रयास करें।"
+            : "I tried to answer from the uploaded document, but no grounded response was returned. Please try again in a moment.";
 
-      // Detect fallback pattern
+      const citations = Array.isArray(response?.citations) ? response.citations : [];
+      const suggestedPolicies = Array.isArray(response?.suggested_policies_referenced)
+        ? response.suggested_policies_referenced
+        : [];
+
       const isFallback =
-        response.content.toLowerCase().includes("not found") ||
-        response.content.includes("नहीं मिली") ||
-        (response.citations.length === 0 &&
-          response.content.toLowerCase().includes("contact the issuer"));
+        content.toLowerCase().includes("not found") ||
+        content.includes("नहीं मिली") ||
+        (citations.length === 0 && content.toLowerCase().includes("contact the issuer"));
 
       const assistantMessage: Message = {
-        id: response.id || `asst_${Date.now()}`,
+        id: response?.id || `asst_${Date.now()}`,
         role: "assistant",
-        content: response.content,
-        citations: response.citations,
-        suggestedPolicies: response.suggested_policies_referenced,
+        content,
+        citations,
+        suggestedPolicies,
         isFallback,
-        timestamp: response.created_at || new Date().toISOString(),
+        timestamp: response?.created_at || new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err: any) {
       console.error("Chat error:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `asst_${Date.now()}`,
+          role: "assistant",
+          content:
+            lang === "hi"
+              ? "उत्तर उत्पन्न करने में समस्या आई। कृपया कुछ सेकंड बाद पुनः प्रयास करें।"
+              : "The chatbot could not generate a grounded answer right now. Please try again in a moment.",
+          citations: [],
+          suggestedPolicies: [],
+          isFallback: true,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
       setError(
         lang === "hi"
           ? "उत्तर उत्पन्न करने में समस्या आई। कृपया पुनः प्रयास करें।"

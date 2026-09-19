@@ -98,7 +98,7 @@ export async function sendChatMessage(
   return request(`/documents/${id}/chat`, {
     method: "POST",
     headers: await headers({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ question, language }),
+    body: JSON.stringify({ question, language, include_benchmarks: true }),
   });
 }
 
