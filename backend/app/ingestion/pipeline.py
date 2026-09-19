@@ -60,18 +60,65 @@ class IngestionPipeline:
 
     def process_document(
         self,
-        file_bytes: bytes,
-        filename: str,
+        file_bytes: Optional[bytes] = None,
+        filename: Optional[str] = None,
         document_type: DocumentType = DocumentType.HEALTH_INSURANCE,
         user_id: str = DEMO_USER_ID,
         doc_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Executes the complete document ingestion pipeline synchronously.
+        Implements explicit re-submission and idempotency semantics:
+        1. If document already exists AND has chunks AND is fully analyzed/embedded:
+           returns the existing document status/result without redundant recomputation.
+        2. If document exists but has 0 chunks (previously failed/aborted run):
+           resumes ingestion (extraction -> chunking -> embedding -> ML) for that exact doc_id.
         """
         doc_id = doc_id or str(uuid.uuid4())
 
         try:
+            # Check re-submission semantics
+            existing_doc = self.repository.get_document(doc_id)
+            if existing_doc:
+                existing_chunks = self.repository.get_chunks(doc_id)
+                # Semantics 1: Already processed with chunks and analyzed/embedded
+                if existing_chunks and len(existing_chunks) > 0 and existing_doc.get("status") in (
+                    DocumentStatus.ANALYZED,
+                    DocumentStatus.EMBEDDED,
+                ):
+                    logger.info(
+                        "[%s] Document already exists with %d chunks and status '%s'. Returning existing status (idempotent).",
+                        doc_id,
+                        len(existing_chunks),
+                        existing_doc.get("status")
+                    )
+                    return {
+                        "document_id": doc_id,
+                        "status": existing_doc.get("status"),
+                        "storage_path": existing_doc.get("storage_path"),
+                        "pages_count": None,
+                        "chunks_count": len(existing_chunks),
+                        "issuer_name": existing_doc.get("issuer_name")
+                    }
+
+                # Semantics 2: Exists but has 0 chunks (resuming failed/incomplete run)
+                logger.info("[%s] Resuming ingestion for existing document (current status: %s, chunks: 0)...",
+                            doc_id, existing_doc.get("status"))
+                if (not file_bytes or len(file_bytes) == 0) and existing_doc.get("storage_path"):
+                    logger.info("[%s] Retrieving raw document bytes from storage path: %s", doc_id, existing_doc.get("storage_path"))
+                    file_bytes = self.storage_mgr.retrieve_file(existing_doc.get("storage_path"))
+                if not filename and existing_doc.get("filename"):
+                    filename = existing_doc.get("filename")
+                if existing_doc.get("document_type"):
+                    document_type = existing_doc.get("document_type")
+                if existing_doc.get("user_id"):
+                    user_id = existing_doc.get("user_id")
+
+            if not file_bytes:
+                raise ValueError(f"Cannot process document '{doc_id}': no file bytes provided and none found in storage.")
+
+            filename = filename or (existing_doc.get("filename") if existing_doc else "uploaded_document.pdf")
+
             # Stage 1: Store raw file in object storage
             logger.info("[%s] Stage 1: Uploading raw file to storage...", doc_id)
             storage_path = self.storage_mgr.store_file(doc_id, filename, file_bytes)
@@ -119,6 +166,8 @@ class IngestionPipeline:
             )
 
             # Stage 5: Embeddings
+            import time
+            t_emb_start = time.time()
             logger.info("[%s] Stage 5: Computing embeddings for %s chunks...", doc_id, len(raw_chunks))
             self.repository.update_status(
                 doc_id=doc_id,
@@ -127,10 +176,15 @@ class IngestionPipeline:
             )
 
             embedded_chunks = self.embedder.embed_chunks(raw_chunks)
+            emb_duration = time.time() - t_emb_start
+            logger.info("[%s] Stage 5 COMPLETE: Computed embeddings for %d chunks in %.2fs", doc_id, len(embedded_chunks), emb_duration)
 
             # Stage 6: Write to document_chunks
-            logger.info("[%s] Stage 6: Persisting %s embedded chunks...", doc_id, len(embedded_chunks))
+            t_persist_start = time.time()
+            logger.info("[%s] Stage 6: Persisting %s embedded chunks to database...", doc_id, len(embedded_chunks))
             saved_count = self.repository.save_chunks(doc_id, embedded_chunks)
+            persist_duration = time.time() - t_persist_start
+            logger.info("[%s] Stage 6 COMPLETE: Persisted %d chunks to Supabase in %.2fs", doc_id, saved_count, persist_duration)
 
             # Stage 7: Trigger ML Analysis (Red flags, Confidence score) -> ANALYZED
             analysis_summary = f"Ingestion complete: {saved_count} clauses embedded and indexed"

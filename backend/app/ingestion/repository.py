@@ -6,6 +6,7 @@ from app.db import StubSupabaseClient, get_db
 from app.identity import DEMO_USER_EMAIL, DEMO_USER_ID
 from app.runtime_flags import allow_in_memory_stores
 from app.schemas import DocumentStatus, DocumentType
+from app.validation import is_valid_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,10 @@ class DocumentRepository:
         issuer_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Creates a document row with initial status 'uploaded'.
+        Creates or registers a document row with initial status 'uploaded'.
+        Checks for an existing row by ID first and uses an upsert with on_conflict=id
+        (matching the users repository's pattern) to tolerate retries, multi-step pipeline calls,
+        and resubmissions without raising 409 Conflict errors.
         """
         now = datetime.utcnow()
         doc_data = {
@@ -64,39 +68,51 @@ class DocumentRepository:
             "confidence_score": None
         }
 
+        # Check for existing document by ID in live DB or local cache
+        existing = self.get_document(doc_id)
+        if existing:
+            # Preserve original upload timestamp and existing metadata
+            doc_data["uploaded_at"] = existing.get("uploaded_at", now)
+            if existing.get("issuer_name") and not issuer_name:
+                doc_data["issuer_name"] = existing.get("issuer_name")
+
         # Save to memory cache
         self._documents[doc_id] = doc_data
 
-        persist_error = self._persist_document_insert(doc_data)
+        persist_error = self._persist_document_upsert(doc_data)
         if persist_error and not allow_in_memory_stores():
             raise RuntimeError(f"Failed to persist document '{doc_id}' to Supabase: {persist_error}")
         if persist_error:
-            logger.error("Supabase documents.insert failed (in-memory allowed): %s", persist_error)
+            logger.error("Supabase documents.upsert failed (in-memory allowed): %s", persist_error)
 
         return doc_data
 
-    def _persist_document_insert(self, doc_data: Dict[str, Any]) -> Optional[str]:
+    def _persist_document_upsert(self, doc_data: Dict[str, Any]) -> Optional[str]:
         try:
             db = get_db()
             if isinstance(db, StubSupabaseClient) or db.__class__.__name__ == "StubSupabaseClient":
                 return "StubSupabaseClient cannot persist documents"
             self._ensure_demo_user(db)
+            uploaded_at = doc_data.get("uploaded_at") or datetime.utcnow()
             payload = {
                 "id": doc_data["id"],
                 "user_id": doc_data["user_id"],
                 "filename": doc_data["filename"],
                 "document_type": doc_data["document_type"],
                 "storage_path": doc_data["storage_path"],
-                "status": DocumentStatus.UPLOADED.value,
+                "status": doc_data["status"].value
+                if hasattr(doc_data["status"], "value")
+                else str(doc_data["status"]),
                 "issuer_name": doc_data.get("issuer_name"),
-                "uploaded_at": doc_data["uploaded_at"].isoformat()
-                if hasattr(doc_data["uploaded_at"], "isoformat")
-                else str(doc_data["uploaded_at"]),
+                "uploaded_at": uploaded_at.isoformat()
+                if hasattr(uploaded_at, "isoformat")
+                else str(uploaded_at),
             }
-            db.table("documents").insert(payload).execute()
+            # Upsert using on_conflict="id", mirroring the pattern in the users repository
+            db.table("documents").upsert(payload, on_conflict="id").execute()
             return None
         except Exception as e:
-            logger.exception("Supabase documents.insert failed: %s", e)
+            logger.exception("Supabase documents.upsert failed: %s", e)
             return f"{type(e).__name__}: {e}"
 
     def _ensure_demo_user(self, db: Any) -> None:
@@ -152,7 +168,13 @@ class DocumentRepository:
         """
         Retrieves document metadata by ID directly from Supabase.
         Does not bypass database by reading from in-memory cache.
+        Defensively validates that doc_id is a valid UUID to prevent Postgres type syntax errors.
         """
+        if not is_valid_uuid(doc_id):
+            if allow_in_memory_stores() and doc_id in self._documents:
+                return self._documents[doc_id]
+            return None
+
         # Primary query to live Supabase database
         try:
             db = get_db()
@@ -239,6 +261,9 @@ class DocumentRepository:
         self._documents.pop(doc_id, None)
         self._chunks.pop(doc_id, None)
 
+        if not is_valid_uuid(doc_id):
+            return False
+
         try:
             db = get_db()
             db.table("documents").delete().eq("id", doc_id).execute()
@@ -314,20 +339,32 @@ class DocumentRepository:
                     "embedding": self._format_embedding(r.get("embedding")),
                     "created_at": now.isoformat()
                 })
+            # Clean up any partial/stale chunks from previous failed runs before inserting fresh batch
+            try:
+                db.table("document_chunks").delete().eq("document_id", doc_id).execute()
+            except Exception as del_err:
+                logger.debug("Stale chunks delete skipped or not found: %s", del_err)
+
             for i in range(0, len(supabase_rows), 50):
                 batch = supabase_rows[i : i + 50]
-                db.table("document_chunks").insert(batch).execute()
+                db.table("document_chunks").upsert(batch, on_conflict="id").execute()
             logger.info("Persisted %s document_chunks to Supabase for '%s'", len(supabase_rows), doc_id)
             return None
         except Exception as e:
-            logger.exception("Supabase document_chunks.insert failed: %s", e)
+            logger.exception("Supabase document_chunks.upsert failed: %s", e)
             return f"{type(e).__name__}: {e}"
 
     def get_chunks(self, doc_id: str) -> List[Dict[str, Any]]:
         """
         Returns all chunks for a given document directly from Supabase.
         Does not bypass database by reading from in-memory cache.
+        Defensively validates that doc_id is a valid UUID to prevent Postgres type syntax errors.
         """
+        if not is_valid_uuid(doc_id):
+            if allow_in_memory_stores() and doc_id in self._chunks:
+                return self._chunks[doc_id]
+            return []
+
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":

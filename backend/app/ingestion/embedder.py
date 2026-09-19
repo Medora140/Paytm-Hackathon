@@ -10,17 +10,40 @@ EXPECTED_EMBEDDING_DIMENSION = 384
 _sentence_transformer_model = None
 
 
-def get_embedding_model():
+def get_embedding_model(timeout_seconds: int = 30):
     """
     Returns the singleton SentenceTransformer instance.
-    Loads the model once and reuses it across all requests and documents.
+    Prioritizes local cache (local_files_only=True, ~0.25s load), preventing
+    silent network hangs on Hugging Face Hub connectivity checks.
     """
     global _sentence_transformer_model
     if _sentence_transformer_model is None:
-        logger.info("Loading local SentenceTransformer model '%s'...", EMBEDDING_MODEL_NAME)
+        import time
+        t0 = time.time()
+        logger.info("Initializing SentenceTransformer model '%s'...", EMBEDDING_MODEL_NAME)
         from sentence_transformers import SentenceTransformer
-        _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-        logger.info("SentenceTransformer model '%s' loaded successfully.", EMBEDDING_MODEL_NAME)
+        try:
+            # Fast offline-first path: load directly from pre-cached files
+            _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=True)
+            dt = time.time() - t0
+            logger.info("SentenceTransformer model '%s' loaded from local cache in %.2fs.", EMBEDDING_MODEL_NAME, dt)
+        except Exception as local_err:
+            logger.warning(
+                "Local cache load for '%s' was not available (%s). Downloading model from Hugging Face Hub (timeout: %ss)...",
+                EMBEDDING_MODEL_NAME, local_err, timeout_seconds
+            )
+            try:
+                _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+                dt = time.time() - t0
+                logger.info("SentenceTransformer model '%s' downloaded and loaded in %.2fs.", EMBEDDING_MODEL_NAME, dt)
+            except Exception as download_err:
+                logger.error(
+                    "CRITICAL: Failed to download or initialize SentenceTransformer model '%s': %s",
+                    EMBEDDING_MODEL_NAME, download_err
+                )
+                raise RuntimeError(
+                    f"SentenceTransformer embedding model '{EMBEDDING_MODEL_NAME}' failed to load: {download_err}"
+                ) from download_err
     return _sentence_transformer_model
 
 
@@ -47,6 +70,10 @@ class ChunkEmbedder:
         model = get_embedding_model()
         all_embeddings: List[List[float]] = []
 
+        import time
+        t0 = time.time()
+        logger.info("Computing 384-d embeddings for %d texts (batch_size=%d)...", len(texts), self.batch_size)
+
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
             # normalize_embeddings=True produces unit vectors for cosine similarity
@@ -60,6 +87,8 @@ class ChunkEmbedder:
                     )
                 all_embeddings.append(vec_list)
 
+        dt = time.time() - t0
+        logger.info("Generated %d embeddings successfully in %.2fs.", len(all_embeddings), dt)
         return all_embeddings
 
     def embed_query(self, query: str) -> List[float]:

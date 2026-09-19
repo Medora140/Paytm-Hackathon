@@ -105,6 +105,20 @@ async def gemini_unavailable_handler(_request: Request, exc: GeminiUnavailableEr
     )
 
 
+@app.on_event("startup")
+async def startup_event():
+    """
+    Pre-warms local SentenceTransformer embedding model at server startup
+    to prevent first-request latency and eliminate network timeouts.
+    """
+    try:
+        from app.ingestion.embedder import get_embedding_model
+        get_embedding_model()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Embedding model pre-warming deferred: %s", e)
+
+
 @app.get("/health", tags=["Health & Monitoring"])
 async def health_check():
     """

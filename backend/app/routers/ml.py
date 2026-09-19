@@ -10,11 +10,17 @@ from app.schemas import (
     RedFlagsResponse,
 )
 from app.ml.service import ml_service
+from app.validation import is_valid_uuid
 
 router = APIRouter(prefix="/documents/{id}", tags=["ML Analysis Service"])
 
 
 def _verify_document_ownership(document_id: str, user_id: str):
+    if not is_valid_uuid(document_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found."
+        )
     doc = repository.get_document(document_id)
     if not doc:
         raise HTTPException(

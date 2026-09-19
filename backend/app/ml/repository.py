@@ -11,6 +11,7 @@ from app.schemas import (
     ScoreBreakdownItem,
     SeverityLevel,
 )
+from app.validation import is_valid_uuid
 
 logger = logging.getLogger("app.ml.repository")
 if not logger.handlers:
@@ -61,7 +62,14 @@ class MLRepository:
     ) -> Optional[DocumentSummaryResponse]:
         """
         Retrieves cached document summary for document_id and language from Supabase.
+        Defensively validates document_id is a UUID.
         """
+        if not is_valid_uuid(document_id):
+            cache_key = f"{document_id}_{language.lower()}"
+            if allow_in_memory_stores() and cache_key in self._summaries:
+                return DocumentSummaryResponse(**self._summaries[cache_key])
+            return None
+
         cache_key = f"{document_id}_{language.lower()}"
         try:
             db = get_db()
@@ -152,8 +160,14 @@ class MLRepository:
         document_id: str
     ) -> Optional[List[RedFlagItem]]:
         """
-        Retrieves persisted red flags for document_id from Supabase.
+        Retrieves cached red flags from Supabase red_flags table.
+        Defensively validates document_id is a UUID.
         """
+        if not is_valid_uuid(document_id):
+            if allow_in_memory_stores() and document_id in self._red_flags:
+                return [RedFlagItem(**item) for item in self._red_flags[document_id]]
+            return None
+
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
@@ -257,7 +271,13 @@ class MLRepository:
     ) -> Optional[ConfidenceScoreResponse]:
         """
         Retrieves cached confidence score from Supabase confidence_scores table.
+        Defensively validates document_id is a UUID.
         """
+        if not is_valid_uuid(document_id):
+            if allow_in_memory_stores() and document_id in self._confidence_scores:
+                return ConfidenceScoreResponse(**self._confidence_scores[document_id])
+            return None
+
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
@@ -379,11 +399,18 @@ class MLRepository:
 
     def get_chat_history(
         self,
-        document_id: str
+        document_id: str,
+        limit: int = 50
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves chat history for a document from Supabase.
+        Retrieves ordered conversation history for a document.
+        Defensively validates document_id is a UUID.
         """
+        if not is_valid_uuid(document_id):
+            if allow_in_memory_stores() and document_id in self._chat_messages:
+                return self._chat_messages[document_id][-limit:]
+            return []
+
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":

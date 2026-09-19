@@ -8,7 +8,7 @@ import {
   RedFlagsResponse,
 } from "../types";
 
-export const MOCK_DOCUMENT_ID = "doc_8f1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
+export const MOCK_DOCUMENT_ID = "00000000-0000-4000-8000-000000000002";
 
 export const MOCK_DOCUMENTS_LIST: DocumentListItem[] = [
   {
@@ -19,17 +19,17 @@ export const MOCK_DOCUMENTS_LIST: DocumentListItem[] = [
     status: "analyzed",
     issuer_name: "Star Health & Allied Insurance",
     uploaded_at: "2026-09-18T05:30:00.000Z",
-    confidence_score: 68,
+    confidence_score: 64,
   },
   {
-    id: "doc_a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    id: "17457fcf-87ea-42d4-8fd0-f3197446247d",
     user_id: "usr_0191eb5a-73d8-7910-b9df-20cb558b9190",
-    filename: "HDFC_Home_Loan_Agreement.pdf",
-    document_type: "loan",
-    status: "embedded",
-    issuer_name: "HDFC Bank",
+    filename: "HDFC_MF_Handbook_2024.pdf",
+    document_type: "mutual_fund",
+    status: "analyzed",
+    issuer_name: "HDFC Asset Management Company Limited",
     uploaded_at: "2026-09-17T12:15:00.000Z",
-    confidence_score: null,
+    confidence_score: 26,
   },
 ];
 

@@ -13,6 +13,7 @@ from app.schemas import (
 )
 from app.ingestion.repository import repository
 from app.ingestion.pipeline import get_ingestion_pipeline
+from app.validation import is_valid_uuid
 
 router = APIRouter(prefix="/documents", tags=["Ingestion Service"])
 
@@ -22,12 +23,14 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Uploaded policy PDF or document file"),
     document_type: Optional[DocumentType] = Form(DocumentType.HEALTH_INSURANCE, description="Category of document"),
+    doc_id: Optional[str] = Form(None, description="Optional document ID for retries / client-assigned ID"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> DocumentUploadResponse:
     """
     Upload a new financial document (multipart/form-data).
     Stores raw file in object storage and initiates the ingestion pipeline.
     Binds the document strictly to the verified authenticated user's ID.
+    Supports idempotent re-submission if doc_id is provided.
     """
     file_bytes = await file.read()
     filename = file.filename or "uploaded_document.pdf"
@@ -67,15 +70,15 @@ async def upload_document(
             detail="Unsupported file format or corrupted header. Only genuine PDF and image scans are accepted."
         )
 
-    doc_id = str(uuid.uuid4())
+    assigned_doc_id = doc_id or str(uuid.uuid4())
     doc_type = document_type or DocumentType.HEALTH_INSURANCE
     user_id = current_user["id"]
 
     pipeline = get_ingestion_pipeline()
-    storage_path = pipeline.storage_mgr.store_file(doc_id, filename, file_bytes)
+    storage_path = pipeline.storage_mgr.store_file(assigned_doc_id, filename, file_bytes)
 
     doc_record = repository.create_document(
-        doc_id=doc_id,
+        doc_id=assigned_doc_id,
         user_id=user_id,
         filename=filename,
         document_type=doc_type,
@@ -89,11 +92,11 @@ async def upload_document(
         filename=filename,
         document_type=doc_type,
         user_id=user_id,
-        doc_id=doc_id
+        doc_id=assigned_doc_id
     )
 
     return DocumentUploadResponse(
-        id=doc_id,
+        id=assigned_doc_id,
         filename=filename,
         document_type=doc_type,
         status=DocumentStatus.UPLOADED,
@@ -136,6 +139,12 @@ async def get_document_metadata_and_status(
     Get document metadata and live processing status.
     Verifies that the requesting user owns this document.
     """
+    if not is_valid_uuid(id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{id}' not found."
+        )
+
     doc = repository.get_document(id)
     if not doc:
         raise HTTPException(
@@ -174,6 +183,12 @@ async def delete_document(
     in compliance with DPDP Act 2023 ("right to erasure").
     Verifies that the requesting user owns this document.
     """
+    if not is_valid_uuid(id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{id}' not found."
+        )
+
     doc = repository.get_document(id)
     if not doc:
         raise HTTPException(
@@ -192,4 +207,56 @@ async def delete_document(
         status="deleted",
         document_id=id,
         message="Document and associated data permanently deleted (DPDP right to erasure)."
+    )
+
+
+@router.post("/{id}/process", response_model=DocumentDetailResponse, status_code=status.HTTP_200_OK)
+@router.post("/{id}/retry", response_model=DocumentDetailResponse, status_code=status.HTTP_200_OK)
+async def retry_or_process_document(
+    id: str,
+    background_tasks: BackgroundTasks,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> DocumentDetailResponse:
+    """
+    Retry or resume ingestion for a stuck/failed document without requiring a fresh file upload.
+    Retrieves stored file from object storage and runs extraction, chunking, embedding, and ML analysis.
+    """
+    if not is_valid_uuid(id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{id}' not found."
+        )
+
+    doc = repository.get_document(id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{id}' not found."
+        )
+
+    if doc.get("user_id") and doc.get("user_id") != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You do not have access to this document."
+        )
+
+    pipeline = get_ingestion_pipeline()
+    # Schedule background processing
+    background_tasks.add_task(
+        pipeline.process_document,
+        user_id=current_user["id"],
+        doc_id=id
+    )
+
+    return DocumentDetailResponse(
+        id=doc["id"],
+        user_id=doc.get("user_id", current_user["id"]),
+        filename=doc["filename"],
+        document_type=DocumentType(doc.get("document_type", "health_insurance")),
+        storage_path=doc["storage_path"],
+        status=DocumentStatus.UPLOADED,
+        pipeline_stage="Resumed processing queued...",
+        issuer_name=doc.get("issuer_name"),
+        uploaded_at=doc.get("uploaded_at", datetime.utcnow()),
+        deleted_at=doc.get("deleted_at")
     )
