@@ -188,6 +188,11 @@ class IngestionPipeline:
             logger.info("[%s] Stage 6 COMPLETE: Persisted %d chunks to Supabase in %.2fs", doc_id, saved_count, persist_duration)
 
             # Stage 7: Trigger ML Analysis (Red flags, Confidence score) -> ANALYZED
+            self.repository.update_status(
+                doc_id=doc_id,
+                status=DocumentStatus.EMBEDDED,
+                pipeline_stage="Auditing policy clauses, detecting red flags & calculating fairness score..."
+            )
             analysis_summary = f"Ingestion complete: {saved_count} clauses embedded and indexed"
             final_status = DocumentStatus.EMBEDDED
             try:

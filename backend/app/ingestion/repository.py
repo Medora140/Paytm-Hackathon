@@ -183,14 +183,26 @@ class DocumentRepository:
                 res = db.table("documents").select("*").eq("id", doc_id).execute()
                 if hasattr(res, "data") and res.data:
                     item = res.data[0]
+                    doc_status = DocumentStatus(item.get("status", "uploaded"))
+                    cached_stage = self._documents.get(doc_id, {}).get("pipeline_stage")
+                    stage_map = {
+                        DocumentStatus.UPLOADED: "Document uploaded — Preparing text extraction",
+                        DocumentStatus.EXTRACTED: "Text extracted — Segmenting into policy clauses",
+                        DocumentStatus.CHUNKED: "Clauses segmented — Computing semantic embeddings",
+                        DocumentStatus.EMBEDDED: "Auditing clauses, detecting red flags & calculating fairness score",
+                        DocumentStatus.ANALYZED: "Analysis complete",
+                        DocumentStatus.FAILED: "Analysis failed",
+                    }
+                    pipeline_stage = cached_stage or stage_map.get(doc_status, f"Status: {doc_status.value}")
+
                     doc = {
                         "id": item.get("id"),
                         "user_id": item.get("user_id"),
                         "filename": item.get("filename"),
                         "document_type": DocumentType(item.get("document_type", "health_insurance")),
                         "storage_path": item.get("storage_path"),
-                        "status": DocumentStatus(item.get("status", "uploaded")),
-                        "pipeline_stage": f"Status: {item.get('status')}",
+                        "status": doc_status,
+                        "pipeline_stage": pipeline_stage,
                         "issuer_name": item.get("issuer_name"),
                         "uploaded_at": _parse_iso_timestamp(item.get("uploaded_at")),
                         "deleted_at": None,

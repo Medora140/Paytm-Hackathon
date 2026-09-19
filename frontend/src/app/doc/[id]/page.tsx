@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -11,7 +11,6 @@ import {
   Building,
   RefreshCw,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
 import {
   ConfidenceScoreResponse,
@@ -31,6 +30,7 @@ import SummaryCard from "@/components/SummaryCard";
 import RedFlagsPanel from "@/components/RedFlagsPanel";
 import BenchmarkStrip from "@/components/BenchmarkStrip";
 import FallbackWarningBanner from "@/components/FallbackWarningBanner";
+import DocumentProcessingState from "@/components/DocumentProcessingState";
 
 export default function DocumentDashboardPage({
   params,
@@ -41,6 +41,7 @@ export default function DocumentDashboardPage({
   const docId = (params?.id || routeParams?.id || "") as string;
 
   const [loading, setLoading] = useState(true);
+  const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [document, setDocument] = useState<DocumentDetailResponse | null>(null);
@@ -49,52 +50,169 @@ export default function DocumentDashboardPage({
   const [scoreData, setScoreData] = useState<ConfidenceScoreResponse | null>(null);
   const [currentLang, setCurrentLang] = useState<string>("en");
 
-  const fetchData = async (lang = "en") => {
-    if (!docId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [docRes, sumRes, flagsRes, scoreRes] = await Promise.all([
-        getDocument(docId),
-        getSummary(docId, lang),
-        getRedFlags(docId),
-        getConfidenceScore(docId),
-      ]);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollAttemptsRef = useRef<number>(0);
+  const MAX_POLL_ATTEMPTS = 45; // 45 * 2s = 90 seconds timeout
 
-      setDocument(docRes);
-      setSummary(sumRes);
-      setRedFlagsData(flagsRes);
-      setScoreData(scoreRes);
-    } catch (err: any) {
-      console.error("Dashboard data fetch error:", err);
-      setError(
-        err?.message || "Unable to load document analysis. Please try again."
-      );
-    } finally {
-      setLoading(false);
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
-  };
+  }, []);
 
+  const loadFullDashboard = useCallback(
+    async (lang = currentLang) => {
+      if (!docId) return;
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [docRes, sumRes, flagsRes, scoreRes] = await Promise.all([
+          getDocument(docId),
+          getSummary(docId, lang),
+          getRedFlags(docId),
+          getConfidenceScore(docId),
+        ]);
+
+        setDocument(docRes);
+        setSummary(sumRes);
+        setRedFlagsData(flagsRes);
+        setScoreData(scoreRes);
+      } catch (err: any) {
+        console.error("Dashboard data load error:", err);
+        setError(
+          err?.message || "Unable to load document analysis. Please try again."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [docId, currentLang]
+  );
+
+  const checkStatus = useCallback(async () => {
+    if (!docId) return;
+    try {
+      setIsChecking(true);
+      const docRes = await getDocument(docId);
+      setDocument(docRes);
+
+      if (docRes.status === "analyzed") {
+        stopPolling();
+        await loadFullDashboard(currentLang);
+        return;
+      }
+
+      if (docRes.status === "failed") {
+        stopPolling();
+        setError(
+          docRes.pipeline_stage ||
+            "Document analysis failed during processing. Please try uploading again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      pollAttemptsRef.current += 1;
+      if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+        stopPolling();
+        await loadFullDashboard(currentLang);
+      }
+    } catch (err: any) {
+      console.warn("Polling status check error:", err);
+    } finally {
+      setIsChecking(false);
+    }
+  }, [docId, currentLang, stopPolling, loadFullDashboard]);
+
+  // Initial load and polling setup
   useEffect(() => {
-    fetchData(currentLang);
+    if (!docId) return;
 
+    let isSubscribed = true;
+    pollAttemptsRef.current = 0;
+
+    const initialize = async () => {
+      setLoading(true);
+      setError(null);
+      stopPolling();
+
+      try {
+        const docRes = await getDocument(docId);
+        if (!isSubscribed) return;
+
+        setDocument(docRes);
+
+        if (docRes.status === "analyzed") {
+          // Document already processed: load complete dashboard data immediately
+          await loadFullDashboard(currentLang);
+        } else if (docRes.status === "failed") {
+          setError(
+            docRes.pipeline_stage || "Document processing failed."
+          );
+          setLoading(false);
+        } else {
+          // Document still in progress: show intermediate state and begin 2s polling
+          setLoading(false);
+          pollTimerRef.current = setInterval(() => {
+            checkStatus();
+          }, 2000);
+        }
+      } catch (err: any) {
+        if (!isSubscribed) return;
+        console.error("Initial document fetch error:", err);
+        setError(err?.message || "Unable to retrieve document metadata.");
+        setLoading(false);
+      }
+    };
+
+    initialize();
+
+    return () => {
+      isSubscribed = false;
+      stopPolling();
+    };
+  }, [docId]);
+
+  // Handle language switch
+  useEffect(() => {
     const handleLangChange = (e: any) => {
       const newLang = e.detail || "en";
       setCurrentLang(newLang);
-      fetchData(newLang);
+      if (document?.status === "analyzed") {
+        getSummary(docId, newLang).then((sumRes) => setSummary(sumRes));
+      }
     };
 
     window.addEventListener("languageChanged", handleLangChange);
     return () => window.removeEventListener("languageChanged", handleLangChange);
-  }, [docId]);
+  }, [docId, document?.status]);
 
-  if (loading) {
+  // Initial loading skeleton before document metadata is retrieved
+  if (loading && !document) {
     return <DashboardSkeleton />;
   }
 
+  // Intermediate state: document is being ingested / analyzed
+  if (
+    document &&
+    document.status !== "analyzed" &&
+    document.status !== "failed"
+  ) {
+    return (
+      <DocumentProcessingState
+        document={document}
+        onRefreshNow={checkStatus}
+        isChecking={isChecking}
+      />
+    );
+  }
+
+  // Error state
   if (error || !document || !summary || !redFlagsData || !scoreData) {
     return (
-      <div className="bg-canvas rounded-3xl p-10 border border-negative/20 text-center space-y-4 shadow-sm max-w-xl mx-auto my-12">
+      <div className="bg-canvas rounded-3xl p-10 border border-negative/20 text-center space-y-4 shadow-sm max-w-xl mx-auto my-12 animate-fade-in">
         <div className="w-14 h-14 rounded-full bg-negative/10 text-negative mx-auto flex items-center justify-center">
           <AlertCircle className="w-7 h-7" />
         </div>
@@ -103,7 +221,7 @@ export default function DocumentDashboardPage({
           {error || "An unexpected error occurred while communicating with the analysis pipeline."}
         </p>
         <button
-          onClick={() => fetchData(currentLang)}
+          onClick={() => loadFullDashboard(currentLang)}
           className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl transition-all shadow-sm active:scale-95"
         >
           <RefreshCw className="w-3.5 h-3.5" />
