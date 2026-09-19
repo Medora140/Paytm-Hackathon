@@ -2,7 +2,7 @@
 
 **Role:** The frontend is the trust interface. Its only job is to make a dense, scary document feel simple, safe, and answerable in under 60 seconds. It does not do any document reasoning itself — it only uploads, displays, and lets the user converse. Visual identity/colors are already defined in your `design.md` — this file only covers structure, page-by-page content, and states, not styling.
 
-**Recommended stack:** Next.js (App Router) + TypeScript + Tailwind, deployed on Vercel. React Query (or SWR) for data fetching, Zustand for lightweight client state (chat history, upload progress).
+**Recommended stack:** Next.js (App Router) + TypeScript + Tailwind, deployed on Render. React Query (or SWR) for data fetching, Zustand for lightweight client state (chat history, upload progress).
 
 ## Global elements (present on every page)
 

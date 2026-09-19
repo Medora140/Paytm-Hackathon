@@ -5,7 +5,7 @@
 
 | Piece | Suggestion | Why |
 |---|---|---|
-| Frontend | Vercel | Zero-config Next.js deploys, instant preview URLs for judges |
+| Frontend | Render | Managed Node deployment for the Next.js app with explicit env vars and stable production hosting |
 | Backend API | Railway or Render | Fast to deploy FastAPI, easy env-var/secrets management |
 | Database + Auth + Storage | Supabase | Postgres + pgvector + Auth + Storage in one managed service — minimizes integration surface |
 | n8n | n8n Cloud, or a small Railway/Docker instance | You already have it wired to Antigravity as MCP — keep it reachable via a stable webhook URL |
@@ -39,6 +39,6 @@ n8n is put as an MCP server.
 
 - [ ] File upload size/type validation (reject non-PDF/image, cap file size) to prevent abuse.
 - [ ] Rate limiting on `/chat` and `/documents` endpoints (per-user) to prevent runaway LLM costs from a single bad actor or bug.
-- [ ] HTTPS everywhere (default on Vercel/Railway/Supabase, just confirm no mixed-content warnings).
+- [ ] HTTPS everywhere (default on Render/Supabase, just confirm no mixed-content warnings).
 - [ ] Scraper respects robots.txt/ToS (see `04-web-scraping-intelligence.md`) — a judge or issuer noticing scraping misuse is a reputational risk worth avoiding.
 - [ ] No API keys or Supabase service-role keys ever shipped in frontend bundle — only anon/public keys client-side.
