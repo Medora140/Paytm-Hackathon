@@ -24,6 +24,7 @@ origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if origins else ["*"],
+    allow_origin_regex=r"https://.*\.onrender\.com|https://.*\.vercel\.app|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,13 +49,13 @@ async def rate_limit_middleware(request: Request, call_next):
     window = 60  # seconds
 
     if method == "POST" and path == "/documents":
-        limit = 10
+        limit = 60
     elif method == "POST" and "/chat" in path:
-        limit = 20
+        limit = 60
 
     if limit is not None:
         auth_header = request.headers.get("authorization", "")
-        client_ip = request.client.host if request.client else "127.0.0.1"
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "127.0.0.1")
         user_key = f"{auth_header[:30]}_{client_ip}" if auth_header else client_ip
         bucket_key = f"{path}:{user_key}"
 

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import math
-from app.ingestion.embedder import get_embedder
+from app.ingestion.embedder import get_embedder, _token_hash_vector
 from app.ml.pii import redact_pii
 from app.ml.sarvam_client import sarvam_client
 from app.schemas import BenchmarkCompareResponse, ChatResponse, CitationItem
@@ -43,27 +43,40 @@ class GroundedRAGChat:
         embedder = get_embedder()
         query_terms = set(_tokens(query))
         document_frequency = Counter(term for chunk in chunks for term in set(_tokens(chunk.get("text", ""))))
-        total_chunks = len(chunks)
+
+        # Pre-process chunks: ensure embeddings are parsed and batch-embed any missing ones
+        missing_chunks = []
+        missing_texts = []
+        for chunk in chunks:
+            emb = chunk.get("embedding")
+            if isinstance(emb, str):
+                try:
+                    chunk["embedding"] = json.loads(emb)
+                except Exception:
+                    chunk["embedding"] = None
+            if not chunk.get("embedding"):
+                missing_chunks.append(chunk)
+                missing_texts.append(chunk.get("text", ""))
+
+        if missing_chunks and missing_texts:
+            try:
+                new_vectors = embedder.embed_texts(missing_texts)
+                for c, v in zip(missing_chunks, new_vectors):
+                    c["embedding"] = v
+            except Exception:
+                for c in missing_chunks:
+                    c["embedding"] = _token_hash_vector(_tokens(c.get("text", "")))
+
         try:
             query_vector = embedder.embed_query(query)
         except Exception:
             query_vector = []
+
         candidates = []
         for chunk in chunks:
             text = chunk.get("text", "")
             embedding = chunk.get("embedding")
-            if isinstance(embedding, str):
-                try:
-                    embedding = json.loads(embedding)
-                except json.JSONDecodeError:
-                    embedding = None
-            if not embedding:
-                try:
-                    embedding = embedder.embed_texts([text])[0]
-                except Exception:
-                    embedding = _token_hash_vector(_tokens(text))
-                chunk["embedding"] = embedding
-            semantic = max(0.0, _cosine(query_vector, embedding)) if query_vector else 0.0
+            semantic = max(0.0, _cosine(query_vector, embedding)) if query_vector and embedding else 0.0
             terms = set(_tokens(text)) | set(_tokens(chunk.get("clause_label", "")))
             lexical = sum(1 / (1 + document_frequency[term]) for term in query_terms & terms)
             lexical /= max(1, len(query_terms))

@@ -29,7 +29,25 @@ async function headers(extra: Record<string, string> = {}) {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const baseUrl = API_BASE_URL.replace(/\/$/, "");
-  const response = await fetch(`${baseUrl}${path}`, options);
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, options);
+  } catch (netErr: any) {
+    if (
+      typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      baseUrl.startsWith("http://")
+    ) {
+      throw new Error(
+        "Mixed Content Error: Frontend is loaded over HTTPS, but NEXT_PUBLIC_API_BASE_URL is using http://. Please configure NEXT_PUBLIC_API_BASE_URL with your HTTPS backend URL in Render/Vercel."
+      );
+    }
+    throw new Error(
+      netErr?.message === "Failed to fetch"
+        ? `Network Error: Unable to reach backend API at ${baseUrl}. Check that the backend is awake and CORS ALLOWED_ORIGINS includes your frontend URL.`
+        : (netErr?.message || "Network request failed.")
+    );
+  }
   if (response.ok) return response.json() as Promise<T>;
   const body = await response.json().catch(() => ({}));
   throw new Error(body.detail || `Request failed (${response.status}).`);

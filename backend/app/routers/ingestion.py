@@ -57,7 +57,7 @@ async def upload_document(
             detail=f"Unsupported file extension for '{filename}'. Allowed extensions: {', '.join(allowed_exts)}."
         )
 
-    is_pdf = file_bytes.startswith(b"%PDF-")
+    is_pdf = b"%PDF-" in file_bytes[:1024]
     is_png = file_bytes.startswith(b"\x89PNG")
     is_jpeg = file_bytes.startswith(b"\xff\xd8\xff")
     is_webp = len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP"

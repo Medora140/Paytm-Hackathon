@@ -230,7 +230,7 @@ export default function DocumentDashboardPage({
             } catch (pollErr) {
               console.warn("Poll check error:", pollErr);
             }
-          }, 2000);
+          }, 1000);
         }
       }
     } catch (err: any) {

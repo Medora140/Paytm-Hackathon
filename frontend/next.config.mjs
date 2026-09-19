@@ -1,6 +1,30 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self' https: http:",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https: http:",
+              "style-src 'self' 'unsafe-inline' https: http: https://fonts.googleapis.com",
+              "font-src 'self' data: https: http: https://fonts.gstatic.com",
+              "img-src 'self' blob: data: https: http:",
+              "connect-src 'self' https: http: wss: ws:",
+              "frame-src 'self' https: http:",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join('; '),
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

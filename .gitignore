@@ -27,3 +27,7 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local Document Storage
+storage/
+backend/storage/
