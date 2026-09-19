@@ -200,4 +200,47 @@ SEED_BENCHMARK_SOURCES: List[Dict[str, Any]] = [
             "Original direct PDF URL returned text/html (not a PDF) — excluded."
         ),
     },
+    # ------------------------------------------------------------------
+    # Health Insurance Benchmark Policies (Online Policy Sources)
+    # ------------------------------------------------------------------
+    {
+        "issuer_name": "Care Health Insurance",
+        "product_name": "Care Supreme",
+        "product_category": "health_insurance",
+        "source_url": "https://www.careinsurance.com/product/care-supreme",
+        "doc_format": "html",
+        "page_type": "policy_portal",
+        "verified_status": 200,
+        "notes": "Care Supreme portal page - 0% room rent sublimit, up to 500% cumulative bonus.",
+    },
+    {
+        "issuer_name": "HDFC ERGO General Insurance",
+        "product_name": "Optima Secure",
+        "product_category": "health_insurance",
+        "source_url": "https://www.hdfcergo.com/health-insurance/optima-secure",
+        "doc_format": "html",
+        "page_type": "policy_portal",
+        "verified_status": 200,
+        "notes": "HDFC ERGO Optima Secure portal page - 2X coverage from Day 1, no room rent cap.",
+    },
+    {
+        "issuer_name": "Niva Bupa Health Insurance",
+        "product_name": "ReAssure 2.0",
+        "product_category": "health_insurance",
+        "source_url": "https://www.nivabupa.com/health-insurance-plans/reassure-2-0.html",
+        "doc_format": "html",
+        "page_type": "policy_portal",
+        "verified_status": 200,
+        "notes": "Niva Bupa ReAssure 2.0 portal page - Lock the clock, unlimited re-instatement.",
+    },
+    {
+        "issuer_name": "Star Health & Allied Insurance",
+        "product_name": "Star Comprehensive Insurance Policy",
+        "product_category": "health_insurance",
+        "source_url": "https://www.starhealth.in/health-insurance-plans/star-comprehensive-insurance-policy",
+        "doc_format": "html",
+        "page_type": "policy_portal",
+        "verified_status": 200,
+        "notes": "Star Comprehensive policy portal page - Day care coverage, second medical opinion.",
+    },
 ]

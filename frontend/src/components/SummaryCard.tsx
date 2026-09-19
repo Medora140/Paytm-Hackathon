@@ -1,12 +1,16 @@
+"use client";
+
 import React, { useState } from "react";
 import { Check, X, Clock, DollarSign, FileText } from "lucide-react";
 import { DocumentSummaryResponse } from "../types";
+import { useTranslation } from "../lib/useTranslation";
 
 interface SummaryCardProps {
   summary: DocumentSummaryResponse;
 }
 
 export default function SummaryCard({ summary }: SummaryCardProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"coverage" | "exclusions" | "fees" | "waiting">("coverage");
 
   return (
@@ -15,10 +19,10 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-ink tracking-tight">
-              Plain-Language Breakdown
+              {t.doc.summaryTitle}
             </h2>
             <p className="text-xs text-body">
-              Instant summary extracted directly from policy text ({summary.language.toUpperCase()})
+              Instant plain-language extraction ({summary.language.toUpperCase()})
             </p>
           </div>
           <span className="text-[11px] font-bold text-mute bg-canvas-soft px-2.5 py-1 rounded-full border border-ink/10">
@@ -37,7 +41,7 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
             }`}
           >
             <Check className="w-3.5 h-3.5" />
-            Coverage ({summary.coverage.length})
+            {t.doc.tabCoverage} ({summary.coverage.length})
           </button>
           <button
             onClick={() => setActiveTab("exclusions")}
@@ -48,7 +52,7 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
             }`}
           >
             <X className="w-3.5 h-3.5" />
-            Exclusions ({summary.exclusions.length})
+            {t.doc.tabExclusions} ({summary.exclusions.length})
           </button>
           <button
             onClick={() => setActiveTab("fees")}
@@ -59,7 +63,7 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
             }`}
           >
             <DollarSign className="w-3.5 h-3.5" />
-            Key Fees ({summary.key_fees.length})
+            {t.doc.tabFees} ({summary.key_fees.length})
           </button>
           <button
             onClick={() => setActiveTab("waiting")}
@@ -70,7 +74,7 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            Waiting Periods ({summary.waiting_periods.length})
+            {t.doc.tabWaiting} ({summary.waiting_periods.length})
           </button>
         </div>
 
@@ -78,65 +82,81 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
         <div className="space-y-3 min-h-[180px]">
           {activeTab === "coverage" && (
             <ul className="space-y-2.5 animate-fade-in">
-              {summary.coverage.map((item, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
-                >
-                  <div className="w-5 h-5 rounded-full bg-primary-pale text-positive-deep flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Check className="w-3 h-3" />
-                  </div>
-                  <span>{item}</span>
-                </li>
-              ))}
+              {summary.coverage.length === 0 ? (
+                <li className="text-xs text-mute italic p-2">{t.doc.noItemsInTab}</li>
+              ) : (
+                summary.coverage.map((item, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-primary-pale text-positive-deep flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-3 h-3" />
+                    </div>
+                    <span>{item}</span>
+                  </li>
+                ))
+              )}
             </ul>
           )}
 
           {activeTab === "exclusions" && (
             <ul className="space-y-2.5 animate-fade-in">
-              {summary.exclusions.map((item, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
-                >
-                  <div className="w-5 h-5 rounded-full bg-negative/10 text-negative flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <X className="w-3 h-3" />
-                  </div>
-                  <span>{item}</span>
-                </li>
-              ))}
+              {summary.exclusions.length === 0 ? (
+                <li className="text-xs text-mute italic p-2">{t.doc.noItemsInTab}</li>
+              ) : (
+                summary.exclusions.map((item, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-negative/10 text-negative flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <X className="w-3 h-3" />
+                    </div>
+                    <span>{item}</span>
+                  </li>
+                ))
+              )}
             </ul>
           )}
 
           {activeTab === "fees" && (
             <ul className="space-y-2.5 animate-fade-in">
-              {summary.key_fees.map((item, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
-                >
-                  <div className="w-5 h-5 rounded-full bg-warning/20 text-warning-deep flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <DollarSign className="w-3 h-3" />
-                  </div>
-                  <span>{item}</span>
-                </li>
-              ))}
+              {summary.key_fees.length === 0 ? (
+                <li className="text-xs text-mute italic p-2">{t.doc.noItemsInTab}</li>
+              ) : (
+                summary.key_fees.map((item, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-warning/20 text-warning-deep flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <DollarSign className="w-3 h-3" />
+                    </div>
+                    <span>{item}</span>
+                  </li>
+                ))
+              )}
             </ul>
           )}
 
           {activeTab === "waiting" && (
             <ul className="space-y-2.5 animate-fade-in">
-              {summary.waiting_periods.map((item, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
-                >
-                  <div className="w-5 h-5 rounded-full bg-accent-orange/30 text-ink flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Clock className="w-3 h-3" />
-                  </div>
-                  <span>{item}</span>
-                </li>
-              ))}
+              {summary.waiting_periods.length === 0 ? (
+                <li className="text-xs text-mute italic p-2">{t.doc.noItemsInTab}</li>
+              ) : (
+                summary.waiting_periods.map((item, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2.5 text-xs text-ink leading-relaxed p-2.5 rounded-2xl bg-canvas-soft/50 border border-ink/5"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-accent-orange/30 text-ink flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Clock className="w-3 h-3" />
+                    </div>
+                    <span>{item}</span>
+                  </li>
+                ))
+              )}
             </ul>
           )}
         </div>
@@ -147,7 +167,7 @@ export default function SummaryCard({ summary }: SummaryCardProps) {
         <div className="border-t border-ink/10 pt-4 mt-6 text-xs text-body">
           <div className="font-bold text-ink mb-1.5 flex items-center gap-1.5">
             <FileText className="w-3.5 h-3.5 text-mute" />
-            <span>Notable Consumer Protections:</span>
+            <span>{t.doc.tabTerms}:</span>
           </div>
           <p className="text-[11px] text-body">
             {summary.notable_terms.join(" • ")}

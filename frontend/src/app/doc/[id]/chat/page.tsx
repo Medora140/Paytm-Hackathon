@@ -14,25 +14,22 @@ import {
   ChevronUp,
   AlertTriangle,
   RefreshCw,
+  ExternalLink,
+  Award,
 } from "lucide-react";
 import { CitationItem } from "@/types";
 import { sendChatMessage } from "@/lib/api";
+import { useTranslation } from "@/lib/useTranslation";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   citations?: CitationItem[];
+  suggestedPolicies?: string[];
   isFallback?: boolean;
   timestamp: string;
 }
-
-const SUGGESTED_QUESTIONS = [
-  "What is my room rent limit and are there deductions?",
-  "What is the waiting period for pre-existing diseases?",
-  "Are day-care procedures covered under this policy?",
-  "What are the mandatory co-pay requirements for non-network hospitals?",
-];
 
 export default function ChatPage({
   params,
@@ -41,6 +38,7 @@ export default function ChatPage({
 }) {
   const routeParams = useParams();
   const docId = (params?.id || routeParams?.id || "") as string;
+  const { t, lang } = useTranslation();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
@@ -87,19 +85,21 @@ export default function ChatPage({
     setLoading(true);
 
     try {
-      const response = await sendChatMessage(docId, question);
+      const response = await sendChatMessage(docId, question, lang);
 
       // Detect fallback pattern
       const isFallback =
-        response.content.toLowerCase().includes("not found in this document") ||
-        response.citations.length === 0 &&
-          response.content.toLowerCase().includes("contact the issuer");
+        response.content.toLowerCase().includes("not found") ||
+        response.content.includes("नहीं मिली") ||
+        (response.citations.length === 0 &&
+          response.content.toLowerCase().includes("contact the issuer"));
 
       const assistantMessage: Message = {
         id: response.id || `asst_${Date.now()}`,
         role: "assistant",
         content: response.content,
         citations: response.citations,
+        suggestedPolicies: response.suggested_policies_referenced,
         isFallback,
         timestamp: response.created_at || new Date().toISOString(),
       };
@@ -107,7 +107,11 @@ export default function ChatPage({
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err: any) {
       console.error("Chat error:", err);
-      setError("Failed to generate answer. Please try again.");
+      setError(
+        lang === "hi"
+          ? "उत्तर उत्पन्न करने में समस्या आई। कृपया पुनः प्रयास करें।"
+          : "Failed to generate answer. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -120,177 +124,203 @@ export default function ChatPage({
   };
 
   return (
-    <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-140px)] animate-fade-in">
-      {/* Header bar */}
-      <div className="bg-canvas rounded-3xl p-4 sm:p-5 shadow-sm border border-ink/10 flex items-center justify-between mb-4">
+    <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-140px)] min-h-[550px] animate-fade-in">
+      {/* Top Header */}
+      <div className="bg-canvas rounded-3xl p-5 shadow-sm border border-ink/10 flex items-center justify-between gap-4 mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <Link
             href={`/doc/${docId}`}
             className="w-9 h-9 rounded-2xl bg-canvas-soft hover:bg-canvas-soft/80 flex items-center justify-center text-ink transition-colors border border-ink/10"
-            title="Back to Dashboard"
+            title={t.chat.backToDash}
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-base font-black text-ink tracking-tight flex items-center gap-2">
-              <span>Policy Q&amp;A Assistant</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-pale text-positive-deep border border-positive/20">
-                Ground Truth
-              </span>
+            <h1 className="text-xl font-black text-ink tracking-tight flex items-center gap-2">
+              <Bot className="w-5 h-5 text-primary-deep" />
+              <span>{t.chat.pageTitle}</span>
             </h1>
-            <p className="text-xs text-mute">
-              Every answer is verified against your policy clauses with page citations
+            <p className="text-xs text-body">
+              {t.chat.pageSubtitle}
             </p>
           </div>
         </div>
 
-        <Link
-          href={`/doc/${docId}`}
-          className="text-xs font-bold text-body hover:text-ink transition-colors hidden sm:block"
-        >
-          View Dashboard
-        </Link>
+        <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-positive-deep bg-positive/10 px-3 py-1.5 rounded-2xl border border-positive/20">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Dual-Context Grounded</span>
+        </div>
       </div>
 
-      {/* Message List Area */}
-      <div className="flex-1 overflow-y-auto bg-canvas rounded-3xl p-4 sm:p-6 border border-ink/10 shadow-sm space-y-6">
-        {/* Empty State: Suggested Questions */}
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-8 space-y-6">
-            <div className="w-16 h-16 rounded-full bg-primary-pale text-primary-deep flex items-center justify-center">
-              <Sparkles className="w-8 h-8" />
+      {/* Chat Messages Container */}
+      <div className="flex-1 bg-canvas rounded-3xl border border-ink/10 shadow-sm p-4 sm:p-6 overflow-y-auto space-y-6">
+        {messages.length === 0 ? (
+          /* Empty / Welcome State */
+          <div className="text-center py-10 max-w-lg mx-auto space-y-5 animate-fade-in">
+            <div className="w-14 h-14 rounded-3xl bg-primary-pale text-positive-deep mx-auto flex items-center justify-center shadow-xs">
+              <Bot className="w-7 h-7" />
             </div>
-            <div className="space-y-1">
+            <div>
               <h2 className="text-lg font-black text-ink">
-                Ask anything about your document
+                {lang === "hi" ? "आपकी पॉलिसी और तुलना के लिए एआई सहायक" : "Grounded Policy & Comparison Assistant"}
               </h2>
-              <p className="text-xs text-body">
-                Our RAG engine cross-checks the fine print and cites exact clause pages.
+              <p className="text-xs text-body mt-1 leading-relaxed">
+                {t.chat.notGroundedNote}
               </p>
             </div>
 
-            <div className="w-full space-y-2 text-left">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-mute block px-1">
-                Suggested questions derived from red flags:
-              </span>
-              {SUGGESTED_QUESTIONS.map((q, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSend(q)}
-                  className="w-full text-left p-3 rounded-2xl bg-canvas-soft hover:bg-canvas-soft/80 border border-ink/5 hover:border-ink/20 text-xs font-semibold text-ink transition-all flex items-center justify-between group"
-                >
-                  <span className="group-hover:text-primary-deep transition-colors">{q}</span>
-                  <span className="text-mute group-hover:text-ink text-xs font-mono">↵</span>
-                </button>
-              ))}
+            {/* Suggested Question Chips */}
+            <div className="text-left space-y-2.5 pt-2">
+              <div className="text-[11px] font-bold text-mute uppercase tracking-wider">
+                {t.chat.suggestedHeading}
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {t.chat.suggestedQuestions.map((q, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSend(q)}
+                    className="w-full text-left p-3 rounded-2xl bg-canvas-soft hover:bg-primary-pale hover:border-primary/40 border border-ink/10 text-xs font-semibold text-ink transition-all flex items-center justify-between group shadow-xs"
+                  >
+                    <span>{q}</span>
+                    <Send className="w-3.5 h-3.5 text-mute group-hover:text-primary-deep transition-colors flex-shrink-0 ml-2" />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
-
-        {/* Rendered Messages */}
-        {messages.map((msg, msgIdx) => (
-          <div
-            key={msg.id || msgIdx}
-            className={`flex flex-col ${
-              msg.role === "user" ? "items-end" : "items-start"
-            }`}
-          >
-            <div className="flex items-start gap-2.5 max-w-[85%]">
-              {msg.role === "assistant" && (
-                <div className="w-8 h-8 rounded-2xl bg-primary flex items-center justify-center text-ink flex-shrink-0 mt-1 shadow-xs">
-                  <Bot className="w-4 h-4" />
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {/* Fallback Amber Notice per spec */}
-                {msg.isFallback ? (
-                  <div
-                    data-testid="fallback-alert"
-                    className="p-4 rounded-3xl bg-warning/20 border border-warning text-ink text-xs space-y-1.5 leading-relaxed"
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-warning-deep">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Not found in this document — you may need to contact the issuer directly</span>
+        ) : (
+          /* Messages Timeline */
+          <div className="space-y-6">
+            {messages.map((msg) => {
+              const isUser = msg.role === "user";
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex gap-3.5 ${
+                    isUser ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {!isUser && (
+                    <div className="w-8 h-8 rounded-2xl bg-primary-pale text-positive-deep flex items-center justify-center flex-shrink-0 mt-0.5 shadow-xs border border-primary/20">
+                      <Bot className="w-4 h-4" />
                     </div>
-                    <p className="text-body">{msg.content}</p>
-                  </div>
-                ) : (
+                  )}
+
                   <div
-                    className={`p-4 rounded-3xl text-xs sm:text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-ink text-canvas rounded-tr-md font-medium"
-                        : "bg-canvas-soft text-ink rounded-tl-md border border-ink/5"
+                    className={`max-w-[85%] sm:max-w-[75%] rounded-3xl p-4 sm:p-5 text-xs leading-relaxed space-y-3 ${
+                      isUser
+                        ? "bg-primary text-ink font-semibold rounded-tr-sm shadow-xs"
+                        : msg.isFallback
+                        ? "bg-warning/10 border border-warning/30 text-ink rounded-tl-sm shadow-xs"
+                        : "bg-canvas-soft/80 border border-ink/10 text-ink rounded-tl-sm shadow-xs"
                     }`}
                   >
-                    {msg.content}
-                  </div>
-                )}
+                    {/* Message Body */}
+                    <div className="whitespace-pre-wrap leading-relaxed">
+                      {msg.content}
+                    </div>
 
-                {/* Inline Expandable Citations */}
-                {msg.citations && msg.citations.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {msg.citations.map((cite, citeIdx) => {
-                      const citeKey = `${msg.id}_cite_${citeIdx}`;
-                      const isExpanded = !!expandedCitations[citeKey];
-                      return (
-                        <div key={citeIdx} className="space-y-1">
-                          <button
-                            onClick={() => toggleCitation(citeKey)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-canvas border border-ink/15 hover:border-ink/40 text-[11px] font-bold text-ink transition-all shadow-2xs hover:bg-primary-pale"
-                          >
-                            <BookOpen className="w-3 h-3 text-mute" />
-                            <span>
-                              Page {cite.page_number}, {cite.clause_label || "Clause"}
-                            </span>
-                            {isExpanded ? (
-                              <ChevronUp className="w-3 h-3 text-mute" />
-                            ) : (
-                              <ChevronDown className="w-3 h-3 text-mute" />
-                            )}
-                          </button>
-
-                          {isExpanded && (
-                            <div className="p-3 bg-canvas border border-ink/10 rounded-2xl text-xs text-body italic font-serif max-w-md animate-fade-in shadow-xs">
-                              &ldquo;{cite.quote}&rdquo;
-                            </div>
-                          )}
+                    {/* Suggested Policy Badges Referenced */}
+                    {msg.suggestedPolicies && msg.suggestedPolicies.length > 0 && (
+                      <div className="border-t border-ink/10 pt-2.5 mt-2 space-y-1.5">
+                        <div className="text-[10px] font-bold text-primary-deep uppercase tracking-wider flex items-center gap-1">
+                          <Award className="w-3 h-3" />
+                          <span>{t.chat.policiesRefHeader}</span>
                         </div>
-                      );
-                    })}
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.suggestedPolicies.map((pName, pIdx) => (
+                            <Link
+                              key={pIdx}
+                              href={`/doc/${docId}/compare`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-canvas border border-ink/10 text-[11px] font-bold text-ink hover:bg-primary-pale hover:border-primary/40 transition-colors shadow-xs"
+                            >
+                              <span>{pName}</span>
+                              <ExternalLink className="w-3 h-3 text-mute" />
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Expandable Citations */}
+                    {msg.citations && msg.citations.length > 0 && (
+                      <div className="border-t border-ink/10 pt-2.5 mt-2 space-y-2">
+                        <div className="text-[10px] font-bold text-mute uppercase tracking-wider">
+                          {t.chat.citationsHeader}
+                        </div>
+                        <div className="space-y-1.5">
+                          {msg.citations.map((cite, cIdx) => {
+                            const cKey = `${msg.id}_cite_${cIdx}`;
+                            const isExpanded = !!expandedCitations[cKey];
+                            return (
+                              <div
+                                key={cKey}
+                                className="bg-canvas rounded-2xl p-2.5 border border-ink/10 text-[11px] space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-ink flex items-center gap-1">
+                                    <BookOpen className="w-3 h-3 text-primary-deep" />
+                                    {t.chat.pageLabel} {cite.page_number} &bull; {cite.clause_label || "Policy Clause"}
+                                  </span>
+                                  <button
+                                    onClick={() => toggleCitation(cKey)}
+                                    className="text-mute hover:text-ink transition-colors p-0.5"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3 h-3" />
+                                    ) : (
+                                      <ChevronDown className="w-3 h-3" />
+                                    )}
+                                  </button>
+                                </div>
+
+                                {isExpanded && (
+                                  <div className="italic font-serif text-body bg-canvas-soft p-2 rounded-xl border border-ink/5 animate-fade-in text-[10px] leading-relaxed">
+                                    &ldquo;{cite.quote}&rdquo;
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {msg.role === "user" && (
-                <div className="w-8 h-8 rounded-2xl bg-canvas-soft border border-ink/10 flex items-center justify-center text-body flex-shrink-0 mt-1">
-                  <User className="w-4 h-4" />
+                  {isUser && (
+                    <div className="w-8 h-8 rounded-2xl bg-canvas border border-ink/10 text-ink flex items-center justify-center flex-shrink-0 mt-0.5 shadow-xs">
+                      <User className="w-4 h-4" />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })}
           </div>
-        ))}
+        )}
 
-        {/* Loading Spinner Indicator */}
+        {/* Loading / Typing Indicator */}
         {loading && (
-          <div className="flex items-start gap-2.5 max-w-[85%]">
-            <div className="w-8 h-8 rounded-2xl bg-primary flex items-center justify-center text-ink flex-shrink-0 mt-1 shadow-xs">
-              <Bot className="w-4 h-4 animate-spin" />
+          <div className="flex items-center gap-3 animate-fade-in">
+            <div className="w-8 h-8 rounded-2xl bg-primary-pale text-positive-deep flex items-center justify-center flex-shrink-0 shadow-xs animate-pulse">
+              <Bot className="w-4 h-4" />
             </div>
-            <div className="p-4 rounded-3xl bg-canvas-soft text-ink rounded-tl-md border border-ink/5 flex items-center gap-2 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-ink animate-ping" />
-              <span>Cross-referencing policy clauses...</span>
+            <div className="bg-canvas-soft border border-ink/10 p-3.5 rounded-2xl rounded-tl-sm text-xs text-body flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-primary-deep animate-spin" />
+              <span>{t.chat.typingIndicator}</span>
             </div>
           </div>
         )}
 
-        {/* Error State with Retry Button */}
+        {/* Inline Error with Retry */}
         {error && (
-          <div className="p-4 rounded-3xl bg-negative/10 border border-negative/20 text-xs text-negative flex items-center justify-between gap-3">
-            <span>{error}</span>
+          <div className="bg-negative/10 border border-negative/20 text-negative p-3 rounded-2xl text-xs flex items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
             <button
               onClick={handleRetry}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-canvas border border-negative/30 rounded-xl font-bold text-ink hover:bg-canvas/80 text-[11px]"
+              className="inline-flex items-center gap-1 font-bold underline hover:no-underline text-xs"
             >
               <RefreshCw className="w-3 h-3" />
               <span>Retry</span>
@@ -301,44 +331,29 @@ export default function ChatPage({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Chips (when messages exist) */}
-      {messages.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto py-2 px-1">
-          {SUGGESTED_QUESTIONS.slice(0, 2).map((q, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSend(q)}
-              className="text-[11px] font-semibold text-body bg-canvas hover:bg-canvas-soft px-3 py-1.5 rounded-full border border-ink/10 whitespace-nowrap transition-colors flex-shrink-0"
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Input Form */}
+      {/* Input Box */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           handleSend();
         }}
-        className="mt-2 bg-canvas rounded-3xl p-2 sm:p-2.5 border border-ink/10 shadow-sm flex items-center gap-2"
+        className="mt-3 flex items-center gap-2 bg-canvas rounded-3xl p-2 border border-ink/10 shadow-sm focus-within:border-ink/40 transition-colors flex-shrink-0"
       >
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="Ask about room rent, exclusions, co-pay..."
-          className="flex-1 bg-transparent px-4 py-2 text-xs sm:text-sm text-ink placeholder:text-mute focus:outline-none"
+          placeholder={t.chat.inputPlaceholder}
+          disabled={loading}
+          className="flex-1 bg-transparent px-4 py-2.5 text-xs text-ink placeholder:text-mute focus:outline-hidden disabled:opacity-50"
         />
-
         <button
           type="submit"
-          data-testid="send-btn"
           disabled={!inputText.trim() || loading}
-          className="w-10 h-10 rounded-2xl bg-primary hover:bg-primary-active disabled:bg-canvas-soft disabled:text-mute text-ink flex items-center justify-center transition-all shadow-xs active:scale-95 flex-shrink-0"
+          className="px-4 py-2.5 bg-primary hover:bg-primary-active disabled:opacity-40 disabled:hover:bg-primary text-ink font-bold text-xs rounded-2xl transition-all shadow-xs flex items-center gap-1.5 active:scale-95"
         >
-          <Send className="w-4 h-4" />
+          <span>{t.chat.sendButton}</span>
+          <Send className="w-3.5 h-3.5" />
         </button>
       </form>
     </div>

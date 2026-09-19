@@ -2,10 +2,22 @@ import io
 import os
 import logging
 from typing import Any, Dict, List, Optional
-from PIL import Image
-import pypdf
-import fitz  # PyMuPDF
-import pytesseract
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 
 from app.ingestion.detector import PDFTypeDetector
 
@@ -18,7 +30,6 @@ POSSIBLE_TESSERACT_PATHS = [
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
     os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
-    r"C:\Users\Medora Gomes\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
 ]
 for p in POSSIBLE_TESSERACT_PATHS:
     if p and os.path.isfile(p):
@@ -31,6 +42,7 @@ class PDFTextExtractor:
     Extracts text page-by-page from PDF documents.
     Primary extractor is pypdf with PyMuPDF fallback.
     Automatically triggers OCR (Tesseract) on pages detected as scanned/image.
+    Supports multilingual documents in Hindi and English.
     """
 
     def __init__(self, min_char_threshold: int = 40):
@@ -58,7 +70,6 @@ class PDFTextExtractor:
         except Exception as e:
             logger.warning("PyMuPDF could not open PDF stream: %s", e)
 
-        num_pages = len(page_diagnostics)
         extracted_pages = []
 
         for diag in page_diagnostics:
@@ -106,7 +117,7 @@ class PDFTextExtractor:
 
     def _run_ocr_on_page(self, page_idx: int, fitz_page: Optional[Any]) -> str:
         """
-        Renders the page to a raster pixmap and applies Tesseract OCR.
+        Renders the page to a raster pixmap and applies Tesseract OCR with Hindi + English support.
         """
         if fitz_page is None:
             return ""
@@ -117,8 +128,11 @@ class PDFTextExtractor:
             img_bytes = pix.tobytes("png")
             image = Image.open(io.BytesIO(img_bytes))
 
-            # Run pytesseract OCR
-            text = pytesseract.image_to_string(image)
+            # Run pytesseract OCR with multilingual support (Hindi + English)
+            try:
+                text = pytesseract.image_to_string(image, lang="hin+eng")
+            except Exception:
+                text = pytesseract.image_to_string(image)
             return text.strip()
         except pytesseract.TesseractNotFoundError:
             logger.warning(

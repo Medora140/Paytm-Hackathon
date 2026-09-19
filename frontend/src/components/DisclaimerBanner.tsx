@@ -1,7 +1,12 @@
+"use client";
+
 import React from "react";
 import { AlertCircle } from "lucide-react";
+import { useTranslation } from "@/lib/useTranslation";
 
 export default function DisclaimerBanner() {
+  const { t } = useTranslation();
+
   return (
     <aside
       aria-label="Compliance disclaimer"
@@ -9,8 +14,7 @@ export default function DisclaimerBanner() {
     >
       <AlertCircle className="w-4 h-4 text-warning-deep flex-shrink-0" />
       <span>
-        <strong>Regulatory & Compliance Notice:</strong> Not financial or legal
-        advice — always confirm with the policy issuer before signing or claiming.
+        <strong>{t.nav.disclaimerHighlight}:</strong> {t.nav.disclaimer}
       </span>
     </aside>
   );

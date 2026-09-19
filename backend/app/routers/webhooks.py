@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from typing import Optional
 import os
 from app.schemas import KBUpdatedWebhook, ScrapeCompleteWebhook, WebhookAckResponse
@@ -26,6 +26,18 @@ async def handle_n8n_scrape_complete(payload: ScrapeCompleteWebhook) -> WebhookA
     Callback webhook triggered by n8n when an asynchronous scraping job finishes.
     Invalidates stale compare-page caches and updates scrape_jobs row in DB.
     """
+    try:
+        from app.scraping.repository import ScrapeRepository
+        repo = ScrapeRepository()
+        repo.update_scrape_job(
+            job_id=payload.job_id,
+            status=str(payload.status.value if hasattr(payload.status, "value") else payload.status),
+            finished_at=payload.finished_at.isoformat() if payload.finished_at else None,
+            error_message=payload.error_message
+        )
+    except Exception:
+        pass
+
     return WebhookAckResponse(
         success=True,
         message=f"Scrape completion acknowledged for job {payload.job_id}. Status: {payload.status}.",

@@ -8,19 +8,12 @@ import {
   AlertCircle,
   ShieldCheck,
   Lock,
-  ArrowRight,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
 import { DocumentType } from "@/types";
 import { uploadDocument } from "@/lib/api";
-
-const STAGES = [
-  { key: "uploading", label: "Uploading file" },
-  { key: "extracting", label: "Extracting text" },
-  { key: "analyzing", label: "Analyzing clauses" },
-  { key: "ready", label: "Ready" },
-];
+import { useTranslation } from "@/lib/useTranslation";
 
 export default function UploadForm({
   initialLowConfidence = false,
@@ -28,6 +21,7 @@ export default function UploadForm({
   initialLowConfidence?: boolean;
 }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dragActive, setDragActive] = useState(false);
@@ -37,6 +31,13 @@ export default function UploadForm({
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lowConfidence] = useState(initialLowConfidence);
+
+  const stages = [
+    { key: "uploading", label: t.upload.stageUploading },
+    { key: "extracting", label: t.upload.stageExtracting },
+    { key: "chunking", label: t.upload.stageChunking },
+    { key: "analyzing", label: t.upload.stageAnalyzing },
+  ];
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -69,18 +70,20 @@ export default function UploadForm({
     setCurrentStageIndex(0);
 
     try {
-      const stageTimer1 = setTimeout(() => setCurrentStageIndex(1), 700);
-      const stageTimer2 = setTimeout(() => setCurrentStageIndex(2), 1500);
+      const stageTimer1 = setTimeout(() => setCurrentStageIndex(1), 600);
+      const stageTimer2 = setTimeout(() => setCurrentStageIndex(2), 1200);
+      const stageTimer3 = setTimeout(() => setCurrentStageIndex(3), 1800);
 
       const response = await uploadDocument(file, selectedDocType);
 
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
+      clearTimeout(stageTimer3);
       setCurrentStageIndex(3);
 
       setTimeout(() => {
         router.push(`/doc/${response.id}`);
-      }, 800);
+      }, 600);
     } catch (err: any) {
       setIsUploading(false);
       setErrorMessage(
@@ -108,10 +111,10 @@ export default function UploadForm({
           <span>Clause Reasoning Engine</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-black text-ink tracking-tight">
-          Upload your financial policy
+          {t.upload.pageTitle}
         </h1>
         <p className="text-sm text-body max-w-lg mx-auto">
-          Get a plain-language explanation, IRDAI dispute red flags, and fairness benchmark score in seconds.
+          {t.upload.pageSubtitle}
         </p>
       </div>
 
@@ -152,13 +155,13 @@ export default function UploadForm({
           <div className="text-center space-y-1">
             <h2 className="text-xl font-black text-ink">Analyzing Your Policy</h2>
             <p className="text-xs text-body">
-              Running OCR, IRDAI ombudsman pattern matching, and benchmark comparison
+              Running multilingual OCR, IRDAI dispute pattern matching, and benchmark comparison
             </p>
           </div>
 
           {/* Stepper Progress */}
           <div className="grid grid-cols-4 gap-2 pt-4">
-            {STAGES.map((stage, idx) => {
+            {stages.map((stage, idx) => {
               const isDone = idx < currentStageIndex;
               const isCurrent = idx === currentStageIndex;
               return (
@@ -175,7 +178,7 @@ export default function UploadForm({
                     {isDone ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                   </div>
                   <span
-                    className={`text-[11px] font-semibold ${
+                    className={`text-[10px] sm:text-[11px] font-semibold ${
                       isCurrent ? "text-ink font-bold" : "text-mute"
                     }`}
                   >
@@ -191,7 +194,7 @@ export default function UploadForm({
             <div
               className="bg-primary h-full transition-all duration-500 rounded-full"
               style={{
-                width: `${((currentStageIndex + 1) / STAGES.length) * 100}%`,
+                width: `${((currentStageIndex + 1) / stages.length) * 100}%`,
               }}
             />
           </div>
@@ -202,7 +205,7 @@ export default function UploadForm({
           {/* Document Type Selector */}
           <div className="bg-canvas rounded-3xl p-6 border border-ink/10 shadow-sm space-y-3">
             <label className="text-xs font-bold uppercase text-mute tracking-wider block">
-              Step 1: Select Document Category
+              {t.upload.selectDocType}
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
@@ -214,107 +217,87 @@ export default function UploadForm({
                     : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
                 }`}
               >
-                <div className="text-sm font-bold text-ink">Health Insurance</div>
+                <div className="text-sm font-bold text-ink">{t.upload.typeHealth}</div>
                 <div className="text-[11px] text-body mt-0.5">
-                  Supported in v1 (IRDAI)
+                  Supported (IRDAI)
                 </div>
               </button>
 
               <button
                 type="button"
-                disabled
-                className="p-4 rounded-2xl border border-ink/5 bg-canvas-soft/60 text-mute text-left cursor-not-allowed opacity-80"
+                onClick={() => setSelectedDocType("loan")}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  selectedDocType === "loan"
+                    ? "border-primary bg-primary-pale font-bold text-ink shadow-xs"
+                    : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-bold text-body">Loan Agreement</div>
-                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-canvas rounded-md border border-ink/10">
-                    Roadmap
-                  </span>
-                </div>
-                <div className="text-[11px] text-mute mt-0.5">
-                  RBI lending benchmarks
+                <div className="text-sm font-bold text-ink">{t.upload.typeLoan}</div>
+                <div className="text-[11px] text-body mt-0.5">
+                  Supported (RBI)
                 </div>
               </button>
 
               <button
                 type="button"
-                disabled
-                className="p-4 rounded-2xl border border-ink/5 bg-canvas-soft/60 text-mute text-left cursor-not-allowed opacity-80"
+                onClick={() => setSelectedDocType("mutual_fund")}
+                className={`p-4 rounded-2xl border text-left transition-all ${
+                  selectedDocType === "mutual_fund"
+                    ? "border-primary bg-primary-pale font-bold text-ink shadow-xs"
+                    : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-bold text-body">Mutual Fund</div>
-                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-canvas rounded-md border border-ink/10">
-                    Roadmap
-                  </span>
-                </div>
-                <div className="text-[11px] text-mute mt-0.5">
-                  SEBI expense ratio audits
+                <div className="text-sm font-bold text-ink">{t.upload.typeMf}</div>
+                <div className="text-[11px] text-body mt-0.5">
+                  Supported (SEBI)
                 </div>
               </button>
             </div>
           </div>
 
-          {/* Drag & Drop Zone */}
+          {/* Drag & Drop Area */}
           <div
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`bg-canvas rounded-3xl p-10 border-2 border-dashed transition-all cursor-pointer text-center space-y-4 shadow-sm group ${
+            className={`bg-canvas border-2 border-dashed rounded-3xl p-10 sm:p-14 text-center cursor-pointer transition-all ${
               dragActive
-                ? "border-primary bg-primary-pale/40"
-                : "border-ink/20 hover:border-ink/40"
+                ? "border-primary bg-primary-pale scale-[1.01]"
+                : "border-ink/20 hover:border-ink/40 hover:bg-canvas-soft/40 shadow-xs"
             }`}
           >
             <input
               ref={fileInputRef}
-              data-testid="file-input"
               type="file"
-              accept=".pdf,application/pdf"
-              className="hidden"
+              accept=".pdf"
               onChange={handleFileInputChange}
+              className="hidden"
             />
-
-            <div className="w-16 h-16 rounded-full bg-canvas-soft group-hover:bg-primary-pale group-hover:text-ink text-body mx-auto flex items-center justify-center transition-colors">
-              <UploadCloud className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-1">
-              <h2 className="text-base font-bold text-ink">
-                Drag &amp; drop your policy PDF here
-              </h2>
-              <p className="text-xs text-mute">
-                or click to browse from your computer (PDF up to 25 MB)
-              </p>
-            </div>
-
-            <div className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl shadow-sm transition-all group-hover:scale-105">
-              <span>Choose Policy PDF</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+            <div className="max-w-sm mx-auto space-y-4">
+              <div className="w-14 h-14 rounded-3xl bg-primary-pale text-positive-deep mx-auto flex items-center justify-center shadow-xs">
+                <UploadCloud className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-ink">
+                  {t.upload.dragDropText}
+                </h3>
+                <p className="text-xs text-body mt-1">
+                  {t.upload.dragDropSubtext}
+                </p>
+              </div>
+              <div className="inline-block px-4 py-2 bg-canvas-soft border border-ink/10 rounded-2xl text-xs font-bold text-ink hover:bg-canvas-soft/80 transition-colors shadow-xs">
+                Browse PDF File
+              </div>
             </div>
           </div>
 
-          {/* DigiLocker Button (Coming Soon per spec) */}
-          <div className="flex items-center justify-center">
-            <button
-              type="button"
-              disabled
-              className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-ink/10 bg-canvas text-mute text-xs font-semibold cursor-not-allowed opacity-75"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Import from DigiLocker (Direct verified fetch — Coming Soon)</span>
-            </button>
-          </div>
-
-          {/* Privacy & DPDP Notice */}
-          <div className="bg-canvas-soft rounded-3xl p-5 border border-ink/10 text-xs text-body flex items-start gap-3">
-            <ShieldCheck className="w-5 h-5 text-positive-deep flex-shrink-0 mt-0.5" />
-            <div>
-              <strong className="font-bold text-ink">
-                Privacy &amp; DPDP Act Guarantee:
-              </strong>{" "}
-              Your policy document is processed in an encrypted ephemeral sandbox. It is never sold, indexed publicly, or shared with your insurer. You can exercise your full right to erasure anytime with one click in settings.
+          {/* Privacy & Compliance Footer */}
+          <div className="bg-canvas rounded-3xl p-5 border border-ink/10 shadow-xs flex items-center gap-3.5 text-xs text-body">
+            <ShieldCheck className="w-6 h-6 text-positive-deep flex-shrink-0" />
+            <div className="leading-relaxed">
+              {t.upload.privacyNote}
             </div>
           </div>
         </div>

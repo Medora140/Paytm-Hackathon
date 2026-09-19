@@ -6,8 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Required for OCR of scanned documents. The Python dependencies provide PDF and ML support.
-RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
+# Required for OCR of scanned documents (Hindi + English). The Python dependencies provide PDF and ML support.
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-hin \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

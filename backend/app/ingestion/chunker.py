@@ -7,6 +7,7 @@ class ClauseChunker:
     Document-type-agnostic clause-level chunker.
     Splits extracted PDF pages into semantically coherent clause segments by headers,
     numbered clauses, or section breaks.
+    Supports English and Hindi documents.
     Strictly preserves page_number and generates clause_label.
     """
 
@@ -15,17 +16,17 @@ class ClauseChunker:
         self.min_chunk_chars = min_chunk_chars
 
         # Comprehensive pattern matching clauses, sections, headings across
-        # Mutual Funds, Loans, and Insurance policies
+        # English and Hindi policy documents, Mutual Funds, Loans, and Insurance
         self.header_pattern = re.compile(
             r"(?:(?<=\n)|^)"
             r"("
-            r"(?:(?:Section|Clause|Article|Schedule|Part)\s+[A-Z0-9\.\-]+[^\n]{0,80})"
+            r"(?:(?:Section|Clause|Article|Schedule|Part|धारा|अनुभाग|खंड|शर्त|नियम|परिशिष्ट)\s+[A-Z0-9\.\-\u0966-\u096F]+[^\n]{0,80})"
             r"|"
-            r"(?:(?:\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+[A-Z][^\n]{3,80})"
+            r"(?:(?:\d{1,2}(?:\.\d{1,2}){0,3}|[\u0966-\u096F]{1,2}(?:\.[\u0966-\u096F]{1,2}){0,3})\.?\s+[A-Z\u0900-\u097F][^\n]{3,80})"
             r"|"
-            r"(?:(?:[IVXLCDM]+)\.\s+[A-Z][^\n]{3,80})"
+            r"(?:(?:[IVXLCDM]+)\.\s+[A-Z\u0900-\u097F][^\n]{3,80})"
             r"|"
-            r"(?:[A-Z0-9\s\/\&\(\)\-]{4,50}:)"
+            r"(?:[A-Z0-9\u0900-\u097F\s\/\&\(\)\-]{4,50}:)"
             r"|"
             r"(?:[A-Z\s]{5,60}(?=\n))"
             r")",
@@ -70,7 +71,6 @@ class ClauseChunker:
             # Process each matched header block
             for i, match in enumerate(matches):
                 header_raw = match.group().strip()
-                # Clean up header label
                 clean_header = re.sub(r"[\s\:\-]+$", "", header_raw).strip()
 
                 start = match.start()
@@ -97,7 +97,6 @@ class ClauseChunker:
                             "text": clause_body
                         })
                     else:
-                        # Append very short snippets to previous chunk if on the same page
                         if chunks and chunks[-1]["page_number"] == page_num:
                             chunks[-1]["text"] += "\n\n" + clause_body
                         else:
@@ -156,9 +155,10 @@ class ClauseChunker:
             })
 
     def _subdivide_text(self, text: str, max_chars: int) -> List[str]:
-        """Subdivides long text by paragraph or line boundaries."""
+        """Subdivides long text by paragraph, danda (।), or line boundaries."""
         parts = []
-        paras = text.split("\n")
+        # Support splitting on double newlines or Hindi/English sentence breaks
+        paras = re.split(r"(?<=[।\.\!\?])\s+|\n+", text)
         cur = ""
         for p in paras:
             p = p.strip()
@@ -168,7 +168,7 @@ class ClauseChunker:
                 parts.append(cur)
                 cur = p
             else:
-                cur = f"{cur}\n{p}".strip() if cur else p
+                cur = f"{cur} {p}".strip() if cur else p
         if cur:
             parts.append(cur)
         return parts if parts else [text]

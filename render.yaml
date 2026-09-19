@@ -1,6 +1,7 @@
 services:
+  # Backend Web Service (FastAPI Docker)
   - type: web
-    name: money-docs-decoded-api
+    name: money-docs-decoded-backend
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
@@ -10,6 +11,8 @@ services:
         value: "true"
       - key: SUPABASE_STORAGE_BUCKET
         value: InsuranceFiles
+      - key: SARVAM_MODEL
+        value: sarvam-m
       - key: ALLOWED_ORIGINS
         sync: false
       - key: SUPABASE_URL
@@ -18,7 +21,21 @@ services:
         sync: false
       - key: SARVAM_API_KEY
         sync: false
-      - key: SARVAM_MODEL
-        value: sarvam-m
       - key: N8N_WEBHOOK_SECRET
         sync: false
+
+  # Frontend Web Service (Next.js Node)
+  - type: web
+    name: money-docs-decoded-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+

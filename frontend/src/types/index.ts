@@ -115,7 +115,19 @@ export interface ChatResponse {
   content: string;
   cited_chunk_ids: string[];
   citations: CitationItem[];
+  suggested_policies_referenced?: string[];
   created_at: string;
+}
+
+export interface BetterPolicySuggestion {
+  id: string;
+  product_name: string;
+  issuer_name: string;
+  website_url: string;
+  why_better: string;
+  key_advantages: string[];
+  potential_savings?: string | null;
+  risk_reduction_score?: number | null;
 }
 
 export interface BenchmarkProductItem {
@@ -135,6 +147,7 @@ export interface BenchmarkCompareResponse {
   issuer_name?: string | null;
   target_attributes: Record<string, any>;
   comparables: BenchmarkProductItem[];
+  better_policies?: BetterPolicySuggestion[];
   last_scraped_at?: string | null;
   data_freshness_label: string;
 }

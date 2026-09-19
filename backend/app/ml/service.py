@@ -117,7 +117,7 @@ class MLService:
         try:
             # Query document metadata for category and issuer
             doc_meta = doc_repository.get_document(document_id)
-            category = "mutual_fund"
+            category = "health_insurance"
             issuer_name = None
             if doc_meta:
                 raw_type = doc_meta.get("document_type")
@@ -226,7 +226,7 @@ class MLService:
         user_id: Optional[str] = None
     ) -> ChatResponse:
         """
-        Conversational grounded RAG Q&A with strict document boundary guardrails.
+        Conversational grounded RAG Q&A with dual-context (document chunks + market benchmarks).
         Persists both the user question and assistant response into chat_messages.
         """
         if not user_id:
@@ -241,16 +241,36 @@ class MLService:
             content=payload.question
         )
 
-        # 2. Generate grounded RAG answer
+        # 2. Fetch benchmark data if requested or available
+        benchmark_data = None
+        if payload.include_benchmarks:
+            try:
+                doc_meta = doc_repository.get_document(document_id)
+                cat = "health_insurance"
+                iss = None
+                if doc_meta:
+                    raw_type = doc_meta.get("document_type")
+                    cat = raw_type.value if hasattr(raw_type, "value") else str(raw_type or "health_insurance")
+                    iss = doc_meta.get("issuer_name")
+                benchmark_data = self.benchmark_service.get_comparisons_for_document(
+                    document_id=document_id,
+                    category=cat,
+                    issuer_name=iss
+                )
+            except Exception as e:
+                logger.warning("Failed to attach benchmark data for chat on doc '%s': %s", document_id, e)
+
+        # 3. Generate grounded RAG answer
         doc_chunks = chunks or get_chunks_for_document(document_id)
         response = self.chat_engine.chat(
             document_id=document_id,
             question=payload.question,
             chunks=doc_chunks,
-            language=payload.language or "en"
+            language=payload.language or "en",
+            benchmark_data=benchmark_data
         )
 
-        # 3. Persist assistant response to Supabase
+        # 4. Persist assistant response to Supabase
         ml_repository.save_chat_message(
             document_id=document_id,
             user_id=effective_user_id,

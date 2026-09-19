@@ -1,7 +1,13 @@
 import io
 from typing import Any, Dict, List, Tuple
-import pypdf
-import fitz  # PyMuPDF
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 
 
 class PDFTypeDetector:

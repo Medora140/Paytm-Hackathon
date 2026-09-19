@@ -26,9 +26,13 @@ class ScrapeRepository:
     """
 
     def __init__(self, in_memory: bool = False):
-        client = get_db() if get_db else None
-        is_stub = client is None or client.__class__.__name__ == "StubSupabaseClient"
-        self.in_memory = in_memory or (allow_in_memory_stores() and (not (db_helper and db_helper.is_configured) or is_stub))
+        client = None
+        try:
+            client = get_db() if get_db else None
+        except Exception:
+            client = None
+        is_stub = client is None or getattr(client, "__class__", {}).__name__ == "StubSupabaseClient"
+        self.in_memory = in_memory or is_stub or not getattr(db_helper, "is_configured", False)
         self._memory_benchmark_products: List[Dict[str, Any]] = []
         self._memory_scrape_jobs: List[Dict[str, Any]] = []
 

@@ -8,13 +8,15 @@ import {
   RefreshCw,
   Plus,
   ArrowRight,
-  ShieldAlert,
   Calendar,
 } from "lucide-react";
 import { DocumentListItem } from "../../types";
 import { deleteDocument, listDocuments } from "../../lib/api";
+import { useTranslation } from "../../lib/useTranslation";
 
 export default function DocumentsHistoryPage() {
+  const { t, lang } = useTranslation();
+  const isHi = lang === "hi";
   const [docs, setDocs] = useState<DocumentListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [rescanningId, setRescanningId] = useState<string | null>(null);
@@ -31,7 +33,10 @@ export default function DocumentsHistoryPage() {
   }, []);
 
   const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to permanently delete this document and all associated embeddings under DPDP right to erasure?")) {
+    const confirmMsg = isHi
+      ? "क्या आप निश्चित हैं कि आप इस दस्तावेज़ को DPDP अधिनियम के तहत स्थायी रूप से हटाना चाहते हैं?"
+      : "Are you sure you want to permanently delete this document and all associated data under DPDP right to erasure?";
+    if (confirm(confirmMsg)) {
       await deleteDocument(id);
       setDocs((prev) => prev.filter((d) => d.id !== id));
     }
@@ -41,7 +46,11 @@ export default function DocumentsHistoryPage() {
     setRescanningId(id);
     setTimeout(() => {
       setRescanningId(null);
-      alert("Policy re-scanned successfully against latest IRDAI ombudsman knowledge base!");
+      alert(
+        isHi
+          ? "पॉलिसी का नवीनतम IRDAI ओम्बड्समैन नियमों के साथ पुनः विश्लेषण किया गया!"
+          : "Policy re-scanned successfully against latest IRDAI ombudsman knowledge base!"
+      );
     }, 1200);
   };
 
@@ -51,10 +60,12 @@ export default function DocumentsHistoryPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">
-            My Analyzed Documents
+            {t.nav.myDocuments}
           </h1>
           <p className="text-xs text-body">
-            Manage your uploaded policies, re-scan with fresh rules, or execute DPDP erasure
+            {isHi
+              ? "अपनी अपलोड की गई पॉलिसियों का प्रबंधन करें, पुनः विश्लेषण करें या DPDP अधिकार के तहत हटाएं"
+              : "Manage your uploaded policies, re-scan with fresh rules, or execute DPDP erasure"}
           </p>
         </div>
 
@@ -63,7 +74,7 @@ export default function DocumentsHistoryPage() {
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl shadow-sm transition-all active:scale-95"
         >
           <Plus className="w-4 h-4" />
-          <span>Upload Policy</span>
+          <span>{t.nav.upload}</span>
         </Link>
       </div>
 
@@ -79,15 +90,17 @@ export default function DocumentsHistoryPage() {
           <div className="w-14 h-14 rounded-full bg-canvas-soft text-mute mx-auto flex items-center justify-center">
             <FileText className="w-7 h-7" />
           </div>
-          <h2 className="text-lg font-bold text-ink">No documents uploaded yet</h2>
+          <h2 className="text-lg font-bold text-ink">{t.nav.noDocs}</h2>
           <p className="text-xs text-body max-w-sm mx-auto">
-            Upload your first health policy or loan agreement to see plain-language summaries and red flags.
+            {isHi
+              ? "सरल सारांश और रेड फ्लैग्स देखने के लिए अपनी पहली स्वास्थ्य पॉलिसी या ऋण अनुबंध अपलोड करें।"
+              : "Upload your first health policy or loan agreement to see plain-language summaries and red flags."}
           </p>
           <Link
             href="/upload"
             className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary rounded-2xl text-xs font-bold text-ink hover:bg-primary-active transition-all"
           >
-            <span>Upload Document</span>
+            <span>{t.nav.upload}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -130,7 +143,7 @@ export default function DocumentsHistoryPage() {
                       {doc.confidence_score}/100
                     </div>
                     <div className="text-[10px] text-mute font-bold uppercase">
-                      Fairness Score
+                      {isHi ? "पारदर्शिता स्कोर" : "Fairness Score"}
                     </div>
                   </div>
                 ) : (
@@ -163,7 +176,7 @@ export default function DocumentsHistoryPage() {
                     href={`/doc/${doc.id}`}
                     className="px-3.5 py-1.5 bg-canvas-soft hover:bg-primary text-ink text-xs font-bold rounded-xl transition-all"
                   >
-                    Open
+                    {isHi ? "खोलें" : "Open"}
                   </Link>
                 </div>
               </div>

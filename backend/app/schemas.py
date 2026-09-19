@@ -180,6 +180,7 @@ class ConfidenceScoreResponse(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Question asked by user regarding document")
     language: Optional[str] = Field("en", description="Preferred output language (en or hi)")
+    include_benchmarks: Optional[bool] = Field(True, description="Include competitive intelligence and suggested better policies in context")
 
 
 class CitationItem(BaseModel):
@@ -196,12 +197,24 @@ class ChatResponse(BaseModel):
     content: str
     cited_chunk_ids: List[str] = Field(default_factory=list)
     citations: List[CitationItem] = Field(default_factory=list)
+    suggested_policies_referenced: List[str] = Field(default_factory=list)
     created_at: datetime
 
 
 # =====================================================================
 # Benchmark / Scraping Service Schemas (/documents/{id}/compare)
 # =====================================================================
+
+class BetterPolicySuggestion(BaseModel):
+    id: str
+    product_name: str
+    issuer_name: str
+    website_url: str
+    why_better: str
+    key_advantages: List[str] = Field(default_factory=list)
+    potential_savings: Optional[str] = None
+    risk_reduction_score: Optional[int] = None
+
 
 class BenchmarkProductItem(BaseModel):
     id: str
@@ -220,6 +233,7 @@ class BenchmarkCompareResponse(BaseModel):
     issuer_name: Optional[str] = None
     target_attributes: Dict[str, Any] = Field(default_factory=dict)
     comparables: List[BenchmarkProductItem] = Field(default_factory=list)
+    better_policies: List[BetterPolicySuggestion] = Field(default_factory=list)
     last_scraped_at: Optional[datetime] = None
     data_freshness_label: str = "Scraped within the last 7 days"
 
