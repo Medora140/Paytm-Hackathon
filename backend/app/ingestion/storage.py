@@ -7,13 +7,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "InsuranceFiles")
 LOCAL_STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage")
+REQUIRE_REMOTE_STORAGE = os.getenv("REQUIRE_REMOTE_STORAGE", "").strip().lower() in {"1", "true", "yes"}
 
 
 class StorageManager:
     """
     Object storage manager for uploaded document files.
-    Uploads raw files to Supabase Storage bucket (InsuranceFiles)
-    with local disk fallback for development, testing, and offline resilience.
+    Production deployments should set REQUIRE_REMOTE_STORAGE=true so an upload never
+    succeeds when it only exists on Render's ephemeral filesystem.
     """
 
     def __init__(self, bucket_name: Optional[str] = None):
@@ -29,7 +30,7 @@ class StorageManager:
         clean_filename = os.path.basename(filename) or "uploaded_document.pdf"
         storage_path = f"documents/{doc_id}/{clean_filename}"
 
-        # 1. Always ensure local persistent copy
+        # Local copies are useful for development but are not durable on Render.
         local_target_path = os.path.join(self.local_dir, "documents", doc_id, clean_filename)
         os.makedirs(os.path.dirname(local_target_path), exist_ok=True)
         try:
@@ -38,11 +39,10 @@ class StorageManager:
         except Exception as e:
             logger.warning("Failed to write to local storage copy: %s", e)
 
-        # 2. Upload to Supabase Storage bucket if client is available
+        # Upload to Supabase Storage. A production deployment must fail closed here.
         try:
             db = get_db()
             if hasattr(db, "storage"):
-                # Check if bucket exists; if not, create
                 try:
                     db.storage.from_(self.bucket_name).upload(
                         path=storage_path,
@@ -50,11 +50,20 @@ class StorageManager:
                         file_options={"content-type": "application/pdf", "upsert": "true"}
                     )
                     logger.info("Successfully uploaded %s to Supabase Storage bucket %s", storage_path, self.bucket_name)
+                    return storage_path
                 except Exception as upload_err:
+                    if REQUIRE_REMOTE_STORAGE:
+                        raise RuntimeError(
+                            "Could not persist upload to Supabase Storage; refusing ephemeral-only storage."
+                        ) from upload_err
                     logger.debug("Supabase storage upload returned: %s (using local copy)", upload_err)
         except Exception as e:
+            if REQUIRE_REMOTE_STORAGE:
+                raise
             logger.debug("Supabase client storage access skipped: %s", e)
 
+        if REQUIRE_REMOTE_STORAGE:
+            raise RuntimeError("Remote object storage is required but is not configured.")
         return storage_path
 
     def retrieve_file(self, storage_path: str) -> Optional[bytes]:

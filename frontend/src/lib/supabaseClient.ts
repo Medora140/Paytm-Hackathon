@@ -1,12 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://qtcncebuochelpgwqthx.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-if (!supabaseAnonKey && typeof window !== "undefined") {
-  console.warn("NEXT_PUBLIC_SUPABASE_ANON_KEY is not defined in environment.");
+if ((!supabaseUrl || !supabaseAnonKey) && typeof window !== "undefined") {
+  console.warn("Supabase public environment variables are not defined.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+test_*.py
+check_*.py
+inspect_*.py
+find_*.py
+search_*.py
+extract_*.py
+decrypt_*.py
+read_*.py
+experiments/
+storage/
+*.db
+*.json

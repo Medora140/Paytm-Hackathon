@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Search for tesseract executable in standard locations if not already set
 POSSIBLE_TESSERACT_PATHS = [
     os.getenv("TESSERACT_CMD", ""),
+    os.getenv("TESSERACT_CMD_PATH", ""),
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
     os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
