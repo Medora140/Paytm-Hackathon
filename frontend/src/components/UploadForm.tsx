@@ -4,29 +4,30 @@ import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   UploadCloud,
-  CheckCircle2,
+  FileText,
   AlertCircle,
-  ShieldCheck,
-  Lock,
   RefreshCw,
+  CheckCircle2,
   Sparkles,
+  Shield,
+  Bot,
+  Zap,
 } from "lucide-react";
-import { DocumentType } from "@/types";
 import { uploadDocument } from "@/lib/api";
 import { useTranslation } from "@/lib/useTranslation";
 
+interface UploadFormProps {
+  initialLowConfidence?: boolean;
+}
+
 export default function UploadForm({
   initialLowConfidence = false,
-}: {
-  initialLowConfidence?: boolean;
-}) {
+}: UploadFormProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dragActive, setDragActive] = useState(false);
-  const [selectedDocType, setSelectedDocType] =
-    useState<DocumentType>("health_insurance");
   const [isUploading, setIsUploading] = useState(false);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -70,11 +71,12 @@ export default function UploadForm({
     setCurrentStageIndex(0);
 
     try {
-      const stageTimer1 = setTimeout(() => setCurrentStageIndex(1), 600);
-      const stageTimer2 = setTimeout(() => setCurrentStageIndex(2), 1200);
-      const stageTimer3 = setTimeout(() => setCurrentStageIndex(3), 1800);
+      const stageTimer1 = setTimeout(() => setCurrentStageIndex(1), 500);
+      const stageTimer2 = setTimeout(() => setCurrentStageIndex(2), 1000);
+      const stageTimer3 = setTimeout(() => setCurrentStageIndex(3), 1600);
 
-      const response = await uploadDocument(file, selectedDocType);
+      // Upload file directly; backend AI automatically identifies the document category
+      const response = await uploadDocument(file);
 
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
@@ -83,7 +85,7 @@ export default function UploadForm({
 
       setTimeout(() => {
         router.push(`/doc/${response.id}`);
-      }, 600);
+      }, 500);
     } catch (err: any) {
       setIsUploading(false);
       setErrorMessage(
@@ -108,7 +110,7 @@ export default function UploadForm({
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-pale text-positive-deep text-xs font-bold mb-1">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Clause Reasoning Engine</span>
+          <span>AI Clause Reasoning & Benchmark Engine</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-black text-ink tracking-tight">
           {t.upload.pageTitle}
@@ -153,9 +155,9 @@ export default function UploadForm({
         /* Multi-stage loading progress bar */
         <div className="bg-canvas rounded-3xl p-8 border border-ink/10 shadow-sm space-y-6">
           <div className="text-center space-y-1">
-            <h2 className="text-xl font-black text-ink">Analyzing Your Policy</h2>
+            <h2 className="text-xl font-black text-ink">Analyzing Your Document</h2>
             <p className="text-xs text-body">
-              Running multilingual OCR, IRDAI dispute pattern matching, and benchmark comparison
+              Auto-identifying document type, extracting Hindi/English text, chunking clauses, and checking market alternatives
             </p>
           </div>
 
@@ -200,58 +202,21 @@ export default function UploadForm({
           </div>
         </div>
       ) : (
-        /* Empty / Ready State Dropzone Form */
+        /* Drag & Drop Area with AI Auto-Identification Badge */
         <div className="space-y-6">
-          {/* Document Type Selector */}
-          <div className="bg-canvas rounded-3xl p-6 border border-ink/10 shadow-sm space-y-3">
-            <label className="text-xs font-bold uppercase text-mute tracking-wider block">
-              {t.upload.selectDocType}
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedDocType("health_insurance")}
-                className={`p-4 rounded-2xl border text-left transition-all ${
-                  selectedDocType === "health_insurance"
-                    ? "border-primary bg-primary-pale font-bold text-ink shadow-xs"
-                    : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
-                }`}
-              >
-                <div className="text-sm font-bold text-ink">{t.upload.typeHealth}</div>
-                <div className="text-[11px] text-body mt-0.5">
-                  Supported (IRDAI)
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedDocType("loan")}
-                className={`p-4 rounded-2xl border text-left transition-all ${
-                  selectedDocType === "loan"
-                    ? "border-primary bg-primary-pale font-bold text-ink shadow-xs"
-                    : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
-                }`}
-              >
-                <div className="text-sm font-bold text-ink">{t.upload.typeLoan}</div>
-                <div className="text-[11px] text-body mt-0.5">
-                  Supported (RBI)
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedDocType("mutual_fund")}
-                className={`p-4 rounded-2xl border text-left transition-all ${
-                  selectedDocType === "mutual_fund"
-                    ? "border-primary bg-primary-pale font-bold text-ink shadow-xs"
-                    : "border-ink/10 hover:border-ink/30 bg-canvas text-body"
-                }`}
-              >
-                <div className="text-sm font-bold text-ink">{t.upload.typeMf}</div>
-                <div className="text-[11px] text-body mt-0.5">
-                  Supported (SEBI)
-                </div>
-              </button>
+          {/* AI Feature Pill */}
+          <div className="bg-canvas rounded-2xl p-4 border border-ink/10 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-ink font-semibold">
+              <Zap className="w-4 h-4 text-primary-deep" />
+              <span>AI Auto-Classification</span>
+            </div>
+            <div className="flex items-center gap-4 text-mute text-[11px]">
+              <span className="flex items-center gap-1">
+                <Shield className="w-3.5 h-3.5 text-positive-deep" /> Insurance, Loans & Contracts
+              </span>
+              <span className="flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-primary-deep" /> Auto-detected clauses
+              </span>
             </div>
           </div>
 
@@ -262,43 +227,49 @@ export default function UploadForm({
             onDragOver={handleDrag}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`bg-canvas border-2 border-dashed rounded-3xl p-10 sm:p-14 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-3xl p-10 sm:p-14 text-center cursor-pointer transition-all bg-canvas shadow-xs ${
               dragActive
-                ? "border-primary bg-primary-pale scale-[1.01]"
-                : "border-ink/20 hover:border-ink/40 hover:bg-canvas-soft/40 shadow-xs"
+                ? "border-primary bg-primary-pale/30 scale-[1.01]"
+                : "border-ink/20 hover:border-ink/40"
             }`}
           >
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
               onChange={handleFileInputChange}
               className="hidden"
             />
-            <div className="max-w-sm mx-auto space-y-4">
-              <div className="w-14 h-14 rounded-3xl bg-primary-pale text-positive-deep mx-auto flex items-center justify-center shadow-xs">
-                <UploadCloud className="w-7 h-7" />
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <div className="w-16 h-16 rounded-3xl bg-primary-pale flex items-center justify-center text-primary-deep transition-transform group-hover:scale-105">
+                <UploadCloud className="w-8 h-8" />
               </div>
-              <div>
-                <h3 className="text-base font-bold text-ink">
+              <div className="space-y-1">
+                <div className="text-base font-extrabold text-ink">
                   {t.upload.dragDropText}
-                </h3>
-                <p className="text-xs text-body mt-1">
+                </div>
+                <div className="text-xs text-body">
                   {t.upload.dragDropSubtext}
-                </p>
+                </div>
               </div>
-              <div className="inline-block px-4 py-2 bg-canvas-soft border border-ink/10 rounded-2xl text-xs font-bold text-ink hover:bg-canvas-soft/80 transition-colors shadow-xs">
-                Browse PDF File
-              </div>
+              <button
+                type="button"
+                className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl transition-all shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>{t.upload.uploadButton}</span>
+              </button>
             </div>
           </div>
 
-          {/* Privacy & Compliance Footer */}
-          <div className="bg-canvas rounded-3xl p-5 border border-ink/10 shadow-xs flex items-center gap-3.5 text-xs text-body">
-            <ShieldCheck className="w-6 h-6 text-positive-deep flex-shrink-0" />
-            <div className="leading-relaxed">
-              {t.upload.privacyNote}
-            </div>
+          {/* Privacy & Engine Callout */}
+          <div className="text-center text-xs text-mute space-y-1">
+            <p>
+              ⚡ Supports Hindi (हिंदी) and English PDF policies, scans, and financial contracts.
+            </p>
+            <p className="text-[11px]">
+              Direct guest analysis &bull; DPDP Act 2023 compliant &bull; Instant red-flag detection & market benchmarking
+            </p>
           </div>
         </div>
       )}

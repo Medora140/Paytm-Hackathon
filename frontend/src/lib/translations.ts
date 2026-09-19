@@ -82,6 +82,14 @@ export interface TranslationDict {
     noItemsInTab: string;
     retryButton: string;
     verifiedOnPage: string;
+    processing: string;
+    uploadedOn: string;
+    compareButton: string;
+    chatButton: string;
+    interactiveAssistant: string;
+    assistantDescription: string;
+    openChatbot: string;
+    viewAlternatives: string;
   };
 
   // Comparison & Better Policies
@@ -200,6 +208,14 @@ export const translations: Record<Language, TranslationDict> = {
       noItemsInTab: "No specific items specified in this section.",
       retryButton: "Retry Analysis",
       verifiedOnPage: "Verified on Page",
+      processing: "Analyzing Document Clauses...",
+      uploadedOn: "Uploaded on",
+      compareButton: "Compare Alternatives",
+      chatButton: "Ask Policy AI",
+      interactiveAssistant: "Interactive Policy Assistant",
+      assistantDescription: "Have questions about clauses, deductions, or whether an alternative policy is better for you? Chat with our AI grounded directly in your document.",
+      openChatbot: "Open Policy AI Chat",
+      viewAlternatives: "View Market Benchmarks",
     },
     compare: {
       title: "Market Intelligence & Better Policy Recommendations",
@@ -318,6 +334,14 @@ export const translations: Record<Language, TranslationDict> = {
       noItemsInTab: "इस अनुभाग में कोई विशिष्ट विवरण नहीं है।",
       retryButton: "पुनः विश्लेषण करें",
       verifiedOnPage: "पृष्ठ पर सत्यापित",
+      processing: "दस्तावेज़ का विश्लेषण हो रहा है...",
+      uploadedOn: "अपलोड किया गया",
+      compareButton: "विकल्पों की तुलना करें",
+      chatButton: "पॉलिसी AI से पूछें",
+      interactiveAssistant: "इंटरैक्टिव पॉलिसी सहायक",
+      assistantDescription: "क्या आपके पास क्लॉज, कटौतियों या बेहतर पॉलिसी विकल्पों के बारे में सवाल हैं? सीधे अपने दस्तावेज़ पर आधारित AI से पूछें।",
+      openChatbot: "पॉलिसी AI चैट खोलें",
+      viewAlternatives: "बाजार मानक देखें",
     },
     compare: {
       title: "बाजार तुलना और बेहतर पॉलिसी सुझाव",

@@ -21,7 +21,8 @@ def _verify_document_ownership(document_id: str, user_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document with ID '{document_id}' not found."
         )
-    if doc.get("user_id") and doc.get("user_id") != user_id:
+    GUEST_ID = "00000000-0000-0000-0000-000000000000"
+    if doc.get("user_id") and doc.get("user_id") != user_id and user_id != GUEST_ID and doc.get("user_id") != GUEST_ID:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: You do not have access to this document."

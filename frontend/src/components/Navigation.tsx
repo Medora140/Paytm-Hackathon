@@ -3,9 +3,8 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileText, ChevronDown, LogOut, User, ArrowUpRight } from "lucide-react";
+import { FileText, ChevronDown, ArrowUpRight, Upload } from "lucide-react";
 import { listDocuments } from "../lib/api";
-import { supabase } from "../lib/supabaseClient";
 import { useTranslation } from "../lib/useTranslation";
 
 export default function Navigation() {
@@ -13,7 +12,6 @@ export default function Navigation() {
   const router = useRouter();
   const { t, lang, setLang } = useTranslation();
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const [documents, setDocuments] = useState<Array<{id: string; filename: string; issuer_name?: string | null; confidence_score?: number | null}>>([]);
 
   // Extract active doc ID from URL if present
@@ -21,27 +19,8 @@ export default function Navigation() {
   const activeDocId = docIdMatch ? docIdMatch[1] : null;
 
   useEffect(() => {
-    // Check current Supabase auth session
-    supabase.auth.getSession().then(({ data }) => {
-      setCurrentUser(data.session?.user || null);
-      if (data.session) listDocuments().then(setDocuments).catch(() => setDocuments([]));
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user || null);
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    router.push("/login");
-    router.refresh();
-  };
+    listDocuments().then(setDocuments).catch(() => setDocuments([]));
+  }, [pathname]);
 
   return (
     <header className="sticky top-0 z-50 bg-canvas/95 backdrop-blur border-b border-ink/10 px-4 lg:px-8 py-3.5 transition-colors">
@@ -82,7 +61,7 @@ export default function Navigation() {
           </nav>
         </div>
 
-        {/* Right tools: Document Switcher + Language Toggle + CTA */}
+        {/* Right tools: Document Switcher + Language Toggle + Upload CTA */}
         <div className="flex items-center gap-3">
           {/* Document Switcher Dropdown */}
           <div className="relative">
@@ -101,7 +80,7 @@ export default function Navigation() {
             </button>
 
             {docDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-canvas rounded-2xl shadow-xl border border-ink/10 p-2 z-50">
+              <div className="absolute right-0 mt-2 w-64 bg-canvas rounded-2xl shadow-xl border border-ink/10 p-2 z-50 animate-fade-in">
                 <div className="text-[11px] font-bold text-mute uppercase px-3 py-1 tracking-wider">
                   {t.nav.switchDoc}
                 </div>
@@ -171,45 +150,13 @@ export default function Navigation() {
             </button>
           </div>
 
-          {/* User Auth Section */}
-          {currentUser ? (
-            <div className="flex items-center gap-2">
-              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-canvas-soft border border-ink/10 text-xs font-semibold text-ink">
-                <User className="w-3.5 h-3.5 text-primary-deep" />
-                <span className="max-w-[120px] truncate">{currentUser.email}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-2xl border border-negative/20 text-negative-deep hover:bg-negative-soft transition-colors"
-                title={t.nav.logout}
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{t.nav.logout}</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs font-bold">
-              <Link
-                href="/login"
-                className="px-3 py-1.5 text-body hover:text-ink transition-colors"
-              >
-                {t.nav.login}
-              </Link>
-              <Link
-                href="/signup"
-                className="px-3 py-1.5 rounded-2xl bg-primary hover:bg-primary-active text-ink transition-all shadow-xs"
-              >
-                {t.nav.signup}
-              </Link>
-            </div>
-          )}
-
           {/* Upload CTA pill */}
           <Link
             href="/upload"
-            className="hidden sm:inline-flex items-center justify-center px-4 py-2 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl transition-all shadow-sm active:scale-95"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-active text-ink font-bold text-xs rounded-2xl transition-all shadow-sm active:scale-95"
           >
-            {t.nav.upload}
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{t.nav.upload}</span>
           </Link>
         </div>
       </div>

@@ -1,4 +1,14 @@
-export type DocumentType = "health_insurance" | "loan" | "mutual_fund";
+export type DocumentType =
+  | "health_insurance"
+  | "term_life_insurance"
+  | "loan"
+  | "loan_agreement"
+  | "mutual_fund"
+  | "credit_card"
+  | "employment_contract"
+  | "rental_agreement"
+  | "general_contract"
+  | (string & {});
 
 export type DocumentStatus =
   | "uploaded"

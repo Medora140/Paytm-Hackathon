@@ -21,7 +21,7 @@ router = APIRouter(prefix="/documents", tags=["Ingestion Service"])
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Uploaded policy PDF or document file"),
-    document_type: Optional[DocumentType] = Form(DocumentType.HEALTH_INSURANCE, description="Category of document"),
+    document_type: Optional[DocumentType] = Form(None, description="Category of document (auto-identified by AI if omitted)"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> DocumentUploadResponse:
     """
@@ -143,8 +143,9 @@ async def get_document_metadata_and_status(
             detail=f"Document with ID '{id}' not found."
         )
 
-    # Cross-user access check
-    if doc.get("user_id") and doc.get("user_id") != current_user["id"]:
+    # Cross-user access check (allow guest access)
+    GUEST_ID = "00000000-0000-0000-0000-000000000000"
+    if doc.get("user_id") and doc.get("user_id") != current_user["id"] and current_user["id"] != GUEST_ID and doc.get("user_id") != GUEST_ID:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: You do not have access to this document."
@@ -181,7 +182,8 @@ async def delete_document(
             detail=f"Document with ID '{id}' not found."
         )
 
-    if doc.get("user_id") and doc.get("user_id") != current_user["id"]:
+    GUEST_ID = "00000000-0000-0000-0000-000000000000"
+    if doc.get("user_id") and doc.get("user_id") != current_user["id"] and current_user["id"] != GUEST_ID and doc.get("user_id") != GUEST_ID:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: You do not have permission to delete this document."

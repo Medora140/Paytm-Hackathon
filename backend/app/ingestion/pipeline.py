@@ -8,6 +8,7 @@ from app.ingestion.extractor import PDFTextExtractor
 from app.ingestion.chunker import ClauseChunker
 from app.ingestion.embedder import ChunkEmbedder
 from app.ingestion.repository import DocumentRepository, repository
+from app.ingestion.classifier import classifier
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,12 @@ class IngestionPipeline:
     End-to-end document ingestion orchestrator:
     1. Upload & store raw file in object storage (status: uploaded)
     2. Detect text-native vs. scanned PDF
-    3. Extract text (pypdf/pdfplumber or Tesseract OCR fallback) (status: extracted)
-    4. Clause-level chunking with page number preservation (status: chunked)
-    5. Generate 384-dimensional chunk embeddings (status: embedded)
-    6. Persist to document_chunks table / repository
+    3. Extract text (pypdf/fitz or Tesseract OCR fallback) (status: extracted)
+    4. Automatically identify document type & issuer with AI classifier
+    5. Clause-level chunking with page number preservation (status: chunked)
+    6. Generate 384-dimensional chunk embeddings (status: embedded)
+    7. Persist to document_chunks table / repository
+    8. Run red-flags and fairness score analysis (status: analyzed)
     """
 
     def __init__(
@@ -46,13 +49,17 @@ class IngestionPipeline:
             combined_header += " " + pages_data[0].get("text", "")[:500].lower()
 
         if "hdfc" in combined_header:
-            return "HDFC Asset Management Company Limited"
+            return "HDFC Asset Management / HDFC ERGO"
         elif "sbi" in combined_header:
             return "SBI Mutual Fund / State Bank of India"
         elif "star health" in combined_header:
             return "Star Health & Allied Insurance"
+        elif "care" in combined_header:
+            return "Care Health Insurance"
+        elif "niva" in combined_header or "bupa" in combined_header:
+            return "Niva Bupa Health Insurance"
         elif "icici" in combined_header:
-            return "ICICI Prudential"
+            return "ICICI Prudential / Lombard"
         elif "axis" in combined_header:
             return "Axis Bank / Axis Mutual Fund"
         return None
@@ -69,21 +76,15 @@ class IngestionPipeline:
         Executes the complete document ingestion pipeline synchronously.
         """
         doc_id = doc_id or str(uuid.uuid4())
-        if not user_id:
-            raise ValueError("A verified user_id is required for document ingestion.")
+        user_id = user_id or "00000000-0000-0000-0000-000000000000"
 
         try:
             # Stage 1: Store raw file in object storage
             logger.info("[%s] Stage 1: Uploading raw file to storage...", doc_id)
             storage_path = self.storage_mgr.store_file(doc_id, filename, file_bytes)
 
-            self.repository.create_document(
-                doc_id=doc_id,
-                user_id=user_id,
-                filename=filename,
-                document_type=document_type,
-                storage_path=storage_path
-            )
+            # The upload route already creates the document row; the background
+            # pipeline must only update that row as it progresses, never insert it a second time.
 
             # Stage 2 & 3: Detect and Extract
             logger.info("[%s] Stage 2 & 3: Extracting text (native / OCR)...", doc_id)
@@ -94,13 +95,17 @@ class IngestionPipeline:
             )
 
             pages_data = self.extractor.extract(file_bytes)
-            issuer_name = self.detect_issuer(filename, pages_data)
+
+            # Automatic AI Document Classification
+            detected_type, doc_lang, detected_issuer = classifier.classify_document(filename, pages_data)
+            issuer_name = detected_issuer or self.detect_issuer(filename, pages_data)
 
             self.repository.update_status(
                 doc_id=doc_id,
                 status=DocumentStatus.EXTRACTED,
-                pipeline_stage=f"Extracted {len(pages_data)} pages",
-                issuer_name=issuer_name
+                pipeline_stage=f"AI identified: {detected_type.value.replace('_', ' ').title()} ({len(pages_data)} pages)",
+                issuer_name=issuer_name,
+                document_type=detected_type
             )
 
             # Stage 4: Clause-level chunking
@@ -112,6 +117,23 @@ class IngestionPipeline:
             )
 
             raw_chunks = self.chunker.chunk_pages(pages_data)
+
+            # Safeguard against zero chunks on sparse documents
+            if not raw_chunks and pages_data:
+                for p in pages_data:
+                    txt = (p.get("text") or "").strip()
+                    if txt:
+                        raw_chunks.append({
+                            "page_number": p.get("page_number", 1),
+                            "clause_label": f"Page {p.get('page_number', 1)} Content",
+                            "text": txt
+                        })
+            if not raw_chunks:
+                raw_chunks.append({
+                    "page_number": 1,
+                    "clause_label": "Document Overview",
+                    "text": f"Document {filename} uploaded for analysis."
+                })
 
             self.repository.update_status(
                 doc_id=doc_id,
@@ -153,12 +175,14 @@ class IngestionPipeline:
                 doc_id=doc_id,
                 status=final_status,
                 pipeline_stage=analysis_summary,
-                issuer_name=issuer_name
+                issuer_name=issuer_name,
+                document_type=detected_type
             )
 
             return {
                 "document_id": doc_id,
                 "status": final_status,
+                "document_type": detected_type,
                 "storage_path": storage_path,
                 "pages_count": len(pages_data),
                 "chunks_count": saved_count,

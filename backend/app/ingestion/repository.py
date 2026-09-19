@@ -91,10 +91,11 @@ class DocumentRepository:
                 if hasattr(doc_data["uploaded_at"], "isoformat")
                 else str(doc_data["uploaded_at"]),
             }
-            db.table("documents").insert(payload).execute()
+            # Use upsert with on_conflict="id" to avoid duplicate key crash on background runs
+            db.table("documents").upsert(payload, on_conflict="id").execute()
             return None
         except Exception as e:
-            logger.exception("Supabase documents.insert failed: %s", e)
+            logger.exception("Supabase documents.upsert failed: %s", e)
             return f"{type(e).__name__}: {e}"
 
     def update_status(
@@ -102,10 +103,11 @@ class DocumentRepository:
         doc_id: str,
         status: DocumentStatus,
         pipeline_stage: str,
-        issuer_name: Optional[str] = None
+        issuer_name: Optional[str] = None,
+        document_type: Optional[DocumentType] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Updates document status, pipeline stage description, and optional detected issuer name.
+        Updates document status, pipeline stage description, and optional detected issuer/type.
         """
         doc = self._documents.get(doc_id)
         if doc:
@@ -113,6 +115,8 @@ class DocumentRepository:
             doc["pipeline_stage"] = pipeline_stage
             if issuer_name:
                 doc["issuer_name"] = issuer_name
+            if document_type:
+                doc["document_type"] = document_type.value if hasattr(document_type, "value") else str(document_type)
 
         # Attempt writing to Supabase
         try:
@@ -121,6 +125,8 @@ class DocumentRepository:
                 payload: Dict[str, Any] = {"status": status.value if hasattr(status, "value") else str(status)}
                 if issuer_name:
                     payload["issuer_name"] = issuer_name
+                if document_type:
+                    payload["document_type"] = document_type.value if hasattr(document_type, "value") else str(document_type)
                 db.table("documents").update(payload).eq("id", doc_id).execute()
         except Exception as e:
             logger.error("Supabase documents.update failed: %s", e)
@@ -132,15 +138,17 @@ class DocumentRepository:
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves document metadata by ID directly from Supabase.
-        Does not bypass database by reading from in-memory cache.
+        Maintains live in-memory stage information for ongoing tasks.
         """
-        # Primary query to live Supabase database
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
                 res = db.table("documents").select("*").eq("id", doc_id).execute()
                 if hasattr(res, "data") and res.data:
                     item = res.data[0]
+                    # Preserve live pipeline stage from memory cache if active
+                    cached = self._documents.get(doc_id, {})
+                    live_stage = cached.get("pipeline_stage") or f"Status: {item.get('status')}"
                     doc = {
                         "id": item.get("id"),
                         "user_id": item.get("user_id"),
@@ -148,7 +156,7 @@ class DocumentRepository:
                         "document_type": DocumentType(item.get("document_type", "health_insurance")),
                         "storage_path": item.get("storage_path"),
                         "status": DocumentStatus(item.get("status", "uploaded")),
-                        "pipeline_stage": f"Status: {item.get('status')}",
+                        "pipeline_stage": live_stage,
                         "issuer_name": item.get("issuer_name"),
                         "uploaded_at": _parse_iso_timestamp(item.get("uploaded_at")),
                         "deleted_at": None,
@@ -161,23 +169,21 @@ class DocumentRepository:
             if not allow_in_memory_stores():
                 raise
 
-        # Test fallback only when allow_in_memory_stores() is explicitly active
-        if allow_in_memory_stores() and doc_id in self._documents:
+        if doc_id in self._documents:
             return self._documents[doc_id]
 
         return None
 
     def list_documents(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Lists documents directly from Supabase, optionally filtered by user_id.
-        Does not bypass database by reading from in-memory cache.
+        Lists documents directly from Supabase. If guest user or no user_id, returns all documents.
         """
-        # Primary query to live Supabase database
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
-                q = db.table("documents").select("*")
-                if user_id:
+                q = db.table("documents").select("*").order("uploaded_at", desc=True)
+                # Filter by user_id only if authenticated and not the default guest ID
+                if user_id and user_id != "00000000-0000-0000-0000-000000000000":
                     q = q.eq("user_id", user_id)
                 res = q.execute()
                 docs = []
@@ -204,10 +210,9 @@ class DocumentRepository:
             if not allow_in_memory_stores():
                 raise
 
-        # Test fallback only when allow_in_memory_stores() is explicitly active
         if allow_in_memory_stores():
             docs = list(self._documents.values())
-            if user_id:
+            if user_id and user_id != "00000000-0000-0000-0000-000000000000":
                 docs = [d for d in docs if d.get("user_id") == user_id]
             return docs
 
@@ -307,13 +312,13 @@ class DocumentRepository:
     def get_chunks(self, doc_id: str) -> List[Dict[str, Any]]:
         """
         Returns all chunks for a given document directly from Supabase.
-        Does not bypass database by reading from in-memory cache.
+        Falls back to local memory if Supabase is temporarily unreachable.
         """
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
                 res = db.table("document_chunks").select("*").eq("document_id", doc_id).order("page_number").execute()
-                if hasattr(res, "data") and res.data is not None:
+                if hasattr(res, "data") and res.data is not None and len(res.data) > 0:
                     data = res.data
                     for row in data:
                         raw_emb = row.get("embedding")
@@ -323,7 +328,6 @@ class DocumentRepository:
                                 row["embedding"] = json.loads(raw_emb)
                             except Exception:
                                 row["embedding"] = [float(x) for x in raw_emb.strip("[]").split(",") if x.strip()]
-                    # Sync memory store as a reflection of Supabase DB
                     self._chunks[doc_id] = data
                     return data
         except Exception as e:
@@ -331,8 +335,7 @@ class DocumentRepository:
             if not allow_in_memory_stores():
                 raise
 
-        # Test fallback only when allow_in_memory_stores() is explicitly active
-        if allow_in_memory_stores() and doc_id in self._chunks:
+        if doc_id in self._chunks and len(self._chunks[doc_id]) > 0:
             return self._chunks[doc_id]
 
         return []

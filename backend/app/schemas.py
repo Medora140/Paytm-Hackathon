@@ -10,8 +10,14 @@ from pydantic import BaseModel, Field
 
 class DocumentType(str, Enum):
     HEALTH_INSURANCE = "health_insurance"
+    TERM_LIFE_INSURANCE = "term_life_insurance"
     LOAN = "loan"
+    LOAN_AGREEMENT = "loan_agreement"
     MUTUAL_FUND = "mutual_fund"
+    CREDIT_CARD = "credit_card"
+    EMPLOYMENT_CONTRACT = "employment_contract"
+    RENTAL_AGREEMENT = "rental_agreement"
+    GENERAL_CONTRACT = "general_contract"
 
 
 class DocumentStatus(str, Enum):

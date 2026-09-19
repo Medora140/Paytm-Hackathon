@@ -21,22 +21,22 @@ async def compare_document_with_market_benchmarks(
     scraped policy products in the same category from Supabase (populated via n8n scraping jobs).
     Wired to BenchmarkService with market comparables and robots.txt-compliant intelligence.
     """
-    # Detect category from id or parameters (defaults to mutual_fund if mf document or unassigned)
+    # Detect category and issuer from document metadata if not provided
     detected_category = category
     detected_issuer = issuer_name
 
+    if not detected_category or not detected_issuer:
+        from app.ingestion.repository import repository
+        doc = repository.get_document(id)
+        if doc:
+            if not detected_category:
+                dt = doc.get("document_type")
+                detected_category = dt.value if hasattr(dt, "value") else str(dt)
+            if not detected_issuer:
+                detected_issuer = doc.get("issuer_name")
+
     if not detected_category:
-        if "mf" in id.lower() or "fund" in id.lower():
-            detected_category = "mutual_fund"
-            detected_issuer = detected_issuer or "HDFC Mutual Fund"
-        elif "loan" in id.lower():
-            detected_category = "loan"
-        elif "health" in id.lower() or "star" in id.lower() or "care" in id.lower():
-            detected_category = "health_insurance"
-            detected_issuer = detected_issuer or "Star Health & Allied Insurance"
-        else:
-            # Default to mutual_fund as per test fixture and seed list
-            detected_category = "mutual_fund"
+        detected_category = "health_insurance"
 
     return _benchmark_service.get_comparisons_for_document(
         document_id=id,
