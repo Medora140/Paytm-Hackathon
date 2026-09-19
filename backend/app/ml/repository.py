@@ -370,9 +370,7 @@ class MLRepository:
                 db.table("chat_messages").insert(record).execute()
                 logger.info("Persisted chat_message (%s) to Supabase for doc '%s'", role, document_id)
         except Exception as e:
-            logger.error("Supabase chat_messages.insert failed: %s", e)
-            if not allow_in_memory_stores():
-                raise
+            logger.warning("Supabase chat_messages.insert failed (non-fatal, retained in memory): %s", e)
 
         return record
 

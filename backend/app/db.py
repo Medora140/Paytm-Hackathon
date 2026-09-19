@@ -28,6 +28,17 @@ class StubResult:
     def __getitem__(self, item):
         return getattr(self, item, None)
 
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+
+class StubAuth:
+    def get_user(self, *args, **kwargs):
+        return None
+
 
 class StubSupabaseClient:
     """
@@ -35,6 +46,7 @@ class StubSupabaseClient:
     """
     def __init__(self, url: str):
         self.url = url
+        self.auth = StubAuth()
 
     def table(self, name: str):
         return self
@@ -48,10 +60,25 @@ class StubSupabaseClient:
     def update(self, *args, **kwargs):
         return self
 
+    def upsert(self, *args, **kwargs):
+        return self
+
     def delete(self, *args, **kwargs):
         return self
 
     def eq(self, *args, **kwargs):
+        return self
+
+    def order(self, *args, **kwargs):
+        return self
+
+    def limit(self, *args, **kwargs):
+        return self
+
+    def single(self, *args, **kwargs):
+        return self
+
+    def maybe_single(self, *args, **kwargs):
         return self
 
     def execute(self):

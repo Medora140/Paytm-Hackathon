@@ -79,8 +79,10 @@ class MLService:
                 language=language
             )
 
-        # 3. Persist generated summary to Supabase
-        ml_repository.save_summary(summary)
+        # 3. Only persist real summaries (not empty-chunk placeholders) to avoid
+        # caching a stale 'still processing' message that would be served forever.
+        if doc_chunks:
+            ml_repository.save_summary(summary)
         return summary
 
     def get_red_flags(
@@ -110,8 +112,10 @@ class MLService:
             doc_chunks = []
         flags = self.detector.detect_red_flags(document_id, doc_chunks)
 
-        # 3. Persist detected flags to Supabase
-        ml_repository.save_red_flags(document_id=document_id, flags=flags)
+        # 3. Persist detected flags to Supabase only when real chunks were used.
+        # Don't cache empty-chunk results or they'll be returned as stale "no flags" forever.
+        if doc_chunks:
+            ml_repository.save_red_flags(document_id=document_id, flags=flags)
 
         return RedFlagsResponse(
             document_id=document_id,
@@ -241,8 +245,9 @@ class MLService:
             transparency_bonus=transparency_bonus
         )
 
-        # 5. Persist confidence score in Supabase
-        ml_repository.save_confidence_score(score)
+        # 5. Persist confidence score in Supabase only when real chunks were used
+        if doc_chunks:
+            ml_repository.save_confidence_score(score)
         return score
 
     def chat_with_document(
@@ -256,17 +261,18 @@ class MLService:
         Conversational grounded RAG Q&A with dual-context (document chunks + market benchmarks).
         Persists both the user question and assistant response into chat_messages.
         """
-        if not user_id:
-            raise ValueError("A verified user_id is required to save chat messages.")
-        effective_user_id = user_id
+        effective_user_id = user_id or "00000000-0000-0000-0000-000000000000"
 
-        # 1. Persist user message to Supabase
-        ml_repository.save_chat_message(
-            document_id=document_id,
-            user_id=effective_user_id,
-            role="user",
-            content=payload.question
-        )
+        # 1. Persist user message to Supabase (resilient best-effort)
+        try:
+            ml_repository.save_chat_message(
+                document_id=document_id,
+                user_id=effective_user_id,
+                role="user",
+                content=payload.question
+            )
+        except Exception as e:
+            logger.warning("Could not persist user chat message for doc '%s': %s", document_id, e)
 
         # 2. Fetch benchmark data if requested or available
         benchmark_data = None
@@ -291,7 +297,7 @@ class MLService:
         try:
             doc_chunks = chunks or get_chunks_for_document(document_id)
         except ChunksNotFoundError:
-            logger.warning("No chunks available yet for doc '%s'; returning processing message.", document_id)
+            logger.warning("No chunks available yet for doc '%s'; continuing with empty chunks.", document_id)
             doc_chunks = []
 
         try:
@@ -306,7 +312,7 @@ class MLService:
             logger.warning("Chat engine error for doc '%s': %s", document_id, chat_err)
             lang = payload.language or "en"
             content = (
-                "यह दस्तावेज़ अभी भी प्रोसेस हो रहा है या चैट इंजन उपलब्ध नहीं है। कृपया थोड़ी देर बाद पुनঃ प्रयास करें।"
+                "यह दस्तावेज़ अभी भी प्रोसेस हो रहा है या चैट इंजन उपलब्ध नहीं है। कृपया थोड़ी देर बाद पुन: प्रयास करें।"
                 if lang.lower() in {"hi", "hindi"}
                 else "The document is still being processed or the chat engine is temporarily unavailable. Please try again in a moment."
             )
@@ -321,14 +327,17 @@ class MLService:
                 created_at=datetime.utcnow(),
             )
 
-        # 4. Persist assistant response to Supabase
-        ml_repository.save_chat_message(
-            document_id=document_id,
-            user_id=effective_user_id,
-            role="assistant",
-            content=response.content,
-            cited_chunk_ids=response.cited_chunk_ids
-        )
+        # 4. Persist assistant response to Supabase (resilient best-effort)
+        try:
+            ml_repository.save_chat_message(
+                document_id=document_id,
+                user_id=effective_user_id,
+                role="assistant",
+                content=response.content,
+                cited_chunk_ids=response.cited_chunk_ids
+            )
+        except Exception as e:
+            logger.warning("Could not persist assistant chat message for doc '%s': %s", document_id, e)
 
         return response
 

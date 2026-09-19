@@ -32,6 +32,60 @@ Backend API (FastAPI/Node)
    └──► Postgres + pgvector + S3-compatible object storage        [05-db]
 ```
 
+## Mermaid architecture diagram
+
+```mermaid
+flowchart LR
+    U[User / Policyholder] --> FE[Frontend\nNext.js + TypeScript + Tailwind]
+    FE --> AUTH[Auth\nJWT / Supabase Auth]
+    FE --> API[Backend API\nFastAPI]
+
+    subgraph FrontendLayer[Frontend Layer]
+        FE
+    end
+
+    subgraph BackendLayer[Backend Layer]
+        API
+        ROUTERS[Routers\nauth / ingestion / ml / scraping / webhooks]
+        INGEST[Ingestion Pipeline\nUpload → OCR → chunk → embed → index]
+        ML[ML + AI Engine\nSummary / red flags / chat / confidence]
+        SCRAPE[Scraping Service\nBenchmark policy comparison]
+        WEBHOOKS[n8n webhooks\nasync callbacks]
+    end
+
+    subgraph DataLayer[Data & Storage Layer]
+        STORAGE[Document Storage\nLocal object store / uploaded files]
+        PG[(PostgreSQL + pgvector\nDocuments, chunks, summaries, flags, benchmarks)]
+        KB[Knowledge Base\nClause patterns / policy rules]
+    end
+
+    subgraph ExternalLayer[External Services]
+        LLM[LLM Provider\nGemini / Sarvam-style reasoning]
+        N8N[n8n Orchestrator\nScheduled scraping and alerts]
+        SOURCES[Public insurer / lender pages\nbenchmark sources]
+    end
+
+    API --> ROUTERS
+    ROUTERS --> INGEST
+    ROUTERS --> ML
+    ROUTERS --> SCRAPE
+    ROUTERS --> WEBHOOKS
+
+    INGEST --> STORAGE
+    INGEST --> PG
+    ML --> PG
+    ML --> KB
+    ML --> LLM
+
+    SCRAPE --> SOURCES
+    SCRAPE --> PG
+    WEBHOOKS --> N8N
+    N8N --> SCRAPE
+
+    PG --> FE
+    ML --> FE
+```
+
 ## Build order recommendation
 1. Collect and label a red-flag clause dataset (see `03-ml-ai-engine.md` for sourcing and labeling approach).
 2. Fine-tune a clause-classification model on that dataset (see `03-ml-ai-engine.md` for model choice and fine-tuning approach) and evaluate it against a held-out set.

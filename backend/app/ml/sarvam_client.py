@@ -1,26 +1,52 @@
 """Small Sarvam chat-completions client used by the grounded document workflows."""
 
 import json
+import logging
 import os
 from typing import Any, Dict
 
 import httpx
+from dotenv import load_dotenv
 from app.errors import SarvamUnavailableError
+
+logger = logging.getLogger(__name__)
+
+# Multi-path .env loader
+for _candidate_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), ".env"),
+]:
+    if os.path.exists(_candidate_path):
+        load_dotenv(_candidate_path)
+load_dotenv()
 
 
 class SarvamClient:
-    def __init__(self) -> None:
-        self.api_key = os.getenv("SARVAM_API_KEY", "").strip()
-        self.base_url = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai/v1").rstrip("/")
-        self.model = os.getenv("SARVAM_MODEL", "sarvam-m")
+    @property
+    def api_key(self) -> str:
+        return os.getenv("SARVAM_API_KEY", "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai/v1").rstrip("/")
+
+    @property
+    def model(self) -> str:
+        return os.getenv("SARVAM_MODEL", "sarvam-m")
 
     def complete_json(self, prompt: str) -> Dict[str, Any]:
-        if not self.api_key:
-            raise SarvamUnavailableError("SARVAM_API_KEY is not configured.")
+        key = self.api_key
+        if not key or key.startswith("your_"):
+            raise SarvamUnavailableError("SARVAM_API_KEY is not configured or is a placeholder.")
         try:
             response = httpx.post(
                 f"{self.base_url}/chat/completions",
-                headers={"api-subscription-key": self.api_key, "Content-Type": "application/json"},
+                headers={
+                    "api-subscription-key": key,
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
                 json={
                     "model": self.model,
                     "messages": [
@@ -39,8 +65,10 @@ class SarvamClient:
             return json.loads(clean)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise SarvamUnavailableError("Sarvam returned an invalid structured response.") from exc
+        except httpx.HTTPStatusError as exc:
+            raise SarvamUnavailableError(f"Sarvam API error (HTTP {exc.response.status_code}): {exc.response.text}") from exc
         except httpx.HTTPError as exc:
-            raise SarvamUnavailableError(f"Sarvam request failed: {exc}") from exc
+            raise SarvamUnavailableError(f"Sarvam network error: {exc}") from exc
 
 
 sarvam_client = SarvamClient()

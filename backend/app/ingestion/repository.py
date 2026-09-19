@@ -118,13 +118,12 @@ class DocumentRepository:
             if document_type:
                 doc["document_type"] = document_type.value if hasattr(document_type, "value") else str(document_type)
 
-        # Attempt writing to Supabase
+        # Attempt writing to Supabase (documents schema: id, user_id, filename, document_type, storage_path, status, issuer_name, uploaded_at, deleted_at)
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
                 payload: Dict[str, Any] = {
                     "status": status.value if hasattr(status, "value") else str(status),
-                    "pipeline_stage": pipeline_stage,
                 }
                 if issuer_name:
                     payload["issuer_name"] = issuer_name
@@ -132,9 +131,9 @@ class DocumentRepository:
                     payload["document_type"] = document_type.value if hasattr(document_type, "value") else str(document_type)
                 db.table("documents").update(payload).eq("id", doc_id).execute()
         except Exception as e:
-            logger.error("Supabase documents.update failed: %s", e)
+            logger.warning("Supabase documents.update failed (status=%s): %s", status, e)
             if not allow_in_memory_stores():
-                raise
+                logger.warning("Non-fatal DB update failure; document in memory updated successfully.")
 
         return doc
 

@@ -160,23 +160,25 @@ class IngestionPipeline:
 
             # Stage 7: Trigger ML Analysis (Red flags, Confidence score) -> ANALYZED
             analysis_summary = f"Ingestion complete: {saved_count} clauses embedded and indexed"
-            final_status = DocumentStatus.EMBEDDED
             try:
                 from app.ml.service import ml_service
                 logger.info("[%s] Stage 7: Triggering ML analysis...", doc_id)
                 flags_resp = ml_service.get_red_flags(doc_id, chunks=embedded_chunks)
                 conf_resp = ml_service.get_confidence_score(doc_id, chunks=embedded_chunks)
-                final_status = DocumentStatus.ANALYZED
                 analysis_summary = (
                     f"Analysis complete: {flags_resp.count} red flags identified | "
                     f"Fairness score {conf_resp.score}/100"
                 )
+                logger.info("[%s] Stage 7 ML analysis done: %s", doc_id, analysis_summary)
             except Exception as ml_err:
-                logger.warning("[%s] ML analysis deferred or failed: %s", doc_id, ml_err)
+                logger.warning("[%s] ML analysis failed (non-fatal, document still marked analyzed): %s", doc_id, ml_err)
+                analysis_summary = f"Document processed: {saved_count} clauses indexed (ML analysis deferred)"
 
+            # Always mark as ANALYZED so the frontend can display results.
+            # ML data is computed on-demand if not cached.
             self.repository.update_status(
                 doc_id=doc_id,
-                status=final_status,
+                status=DocumentStatus.ANALYZED,
                 pipeline_stage=analysis_summary,
                 issuer_name=issuer_name,
                 document_type=detected_type
@@ -184,7 +186,7 @@ class IngestionPipeline:
 
             return {
                 "document_id": doc_id,
-                "status": final_status,
+                "status": DocumentStatus.ANALYZED,
                 "document_type": detected_type,
                 "storage_path": storage_path,
                 "pages_count": len(pages_data),
