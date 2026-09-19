@@ -1,0 +1,91 @@
+{
+  "name": "ocr-overflow-queue",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ocr-queue",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook Ingest Overflow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body || {};\nreturn {\n  json: {\n    document_id: payload.document_id,\n    storage_path: payload.storage_path,\n    pages_count: payload.pages_count || 1,\n    status: 'processing_ocr',\n    queued_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "2",
+      "name": "Extract Overflow Job Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_BASE_URL || 'http://127.0.0.1:8000' }}/webhooks/n8n/scrape-complete",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "job_id",
+              "value": "={{ 'ocr_' + $json.document_id }}"
+            },
+            {
+              "name": "source_url",
+              "value": "={{ $json.storage_path || 's3://bucket/docs' }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "items_scraped",
+              "value": "={{ $json.pages_count }}"
+            },
+            {
+              "name": "finished_at",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Callback Backend with Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Ingest Overflow": {
+      "main": [
+        [
+          {
+            "node": "Extract Overflow Job Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Overflow Job Payload": {
+      "main": [
+        [
+          {
+            "node": "Callback Backend with Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

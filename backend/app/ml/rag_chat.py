@@ -163,8 +163,10 @@ class GroundedRAGChat:
             try:
                 from google.genai import types
 
+                from app.ml.pii import redact_pii
+
                 chunks_context = "\n\n".join([
-                    f"[Chunk ID: {c.get('id')} | Page: {c.get('page_number')} | Section: {c.get('clause_label', '')}]\n{c.get('text', '')}"
+                    f"[Chunk ID: {c.get('id')} | Page: {c.get('page_number')} | Section: {c.get('clause_label', '')}]\n{redact_pii(c.get('text', ''))}"
                     for c in relevant_chunks
                 ])
 

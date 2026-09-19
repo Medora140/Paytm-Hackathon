@@ -43,6 +43,7 @@ export interface DocumentDetailResponse {
   issuer_name?: string | null;
   uploaded_at: string;
   deleted_at?: string | null;
+  is_fallback?: boolean;
 }
 
 export interface DocumentSummaryResponse {
@@ -77,6 +78,7 @@ export interface RedFlagsResponse {
   document_id: string;
   count: number;
   red_flags: RedFlagItem[];
+  is_fallback?: boolean;
 }
 
 export interface ScoreBreakdownItem {
@@ -90,6 +92,7 @@ export interface ConfidenceScoreResponse {
   score: number;
   breakdown: ScoreBreakdownItem[];
   kb_version: string;
+  is_fallback?: boolean;
   computed_at: string;
 }
 
@@ -139,6 +142,7 @@ export interface BenchmarkCompareResponse {
   comparables: BenchmarkProductItem[];
   last_scraped_at?: string | null;
   data_freshness_label: string;
+  is_fallback?: boolean;
 }
 
 export interface SessionResponse {

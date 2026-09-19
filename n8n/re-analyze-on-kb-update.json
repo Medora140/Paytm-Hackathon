@@ -1,0 +1,106 @@
+{
+  "name": "re-analyze-on-kb-update",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kb-updated",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook KB Updated",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [100, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_BASE_URL || 'http://127.0.0.1:8000' }}/webhooks/n8n/kb-updated",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "kb_version",
+              "value": "={{ $json.body.kb_version || 'kb_v2026.09_sebi_irda_ombudsman' }}"
+            },
+            {
+              "name": "patterns_added",
+              "value": "={{ $json.body.patterns_added || 1 }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Notify Backend of KB Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_BASE_URL || 'http://127.0.0.1:8000' }}/documents",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Fetch Documents for Re-Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const docs = $input.all();\nreturn docs.map(d => ({\n  json: {\n    document_id: d.json.id,\n    filename: d.json.filename,\n    reanalyzed_at: new Date().toISOString(),\n    status: 'queued_for_reanalysis'\n  }\n}));"
+      },
+      "id": "4",
+      "name": "Batch Throttled Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 200]
+    }
+  ],
+  "connections": {
+    "Webhook KB Updated": {
+      "main": [
+        [
+          {
+            "node": "Notify Backend of KB Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Backend of KB Update": {
+      "main": [
+        [
+          {
+            "node": "Fetch Documents for Re-Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Documents for Re-Analysis": {
+      "main": [
+        [
+          {
+            "node": "Batch Throttled Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -167,10 +167,56 @@ STARTER_KNOWLEDGE_BASE: List[RedFlagPattern] = [
 class RedFlagKnowledgeBase:
     """
     Knowledge base interface providing pattern lookup, search, and categorization.
+    Dynamically loads patterns from Supabase red_flag_patterns table,
+    with transparent fallback to STARTER_KNOWLEDGE_BASE.
     """
 
     def __init__(self, patterns: Optional[List[RedFlagPattern]] = None):
-        self._patterns: List[RedFlagPattern] = patterns if patterns is not None else list(STARTER_KNOWLEDGE_BASE)
+        if patterns is not None:
+            self._patterns = list(patterns)
+        else:
+            self._patterns = self._load_patterns()
+
+    def _load_patterns(self) -> List[RedFlagPattern]:
+        try:
+            from app.db import get_db, StubSupabaseClient
+            db = get_db()
+            if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
+                res = db.table("red_flag_patterns").select("*").execute()
+                if hasattr(res, "data") and res.data:
+                    loaded = []
+                    for row in res.data:
+                        sev_str = row.get("severity_default", "medium").lower()
+                        try:
+                            sev = SeverityLevel(sev_str)
+                        except Exception:
+                            sev = SeverityLevel.MEDIUM
+                        
+                        # Find original starter pattern if ID matches or clause_type matches
+                        orig_id = row.get("id")
+                        for sp in STARTER_KNOWLEDGE_BASE:
+                            import uuid
+                            if str(uuid.uuid5(uuid.NAMESPACE_DNS, sp.pattern_id)) == str(orig_id):
+                                orig_id = sp.pattern_id
+                                break
+
+                        loaded.append(
+                            RedFlagPattern(
+                                pattern_id=str(orig_id),
+                                category=row.get("category", "general"),
+                                clause_type=row.get("clause_type", "general"),
+                                trigger_keywords=row.get("trigger_keywords", []) or [],
+                                trigger_regex=row.get("trigger_regex"),
+                                plain_explanation_template=row.get("plain_explanation_template", ""),
+                                severity_default=sev,
+                                source_reference=row.get("source_reference", "")
+                            )
+                        )
+                    if loaded:
+                        return loaded
+        except Exception:
+            pass
+        return list(STARTER_KNOWLEDGE_BASE)
 
     @property
     def patterns(self) -> List[RedFlagPattern]:
@@ -190,3 +236,4 @@ class RedFlagKnowledgeBase:
 
     def add_pattern(self, pattern: RedFlagPattern) -> None:
         self._patterns.append(pattern)
+

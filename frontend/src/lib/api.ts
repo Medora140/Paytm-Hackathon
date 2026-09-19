@@ -101,6 +101,7 @@ export async function getDocument(id: string): Promise<DocumentDetailResponse> {
     return {
       ...MOCK_DOCUMENT_DETAIL,
       id,
+      is_fallback: true,
     };
   }
 }
@@ -165,7 +166,7 @@ export async function getRedFlags(id: string): Promise<RedFlagsResponse> {
     throw new Error(`Get red flags failed: ${res.status}`);
   } catch (err) {
     console.warn("Backend unavailable, using mock red flags:", err);
-    return { ...MOCK_RED_FLAGS, document_id: id };
+    return { ...MOCK_RED_FLAGS, document_id: id, is_fallback: true };
   }
 }
 
@@ -183,7 +184,7 @@ export async function getConfidenceScore(
     throw new Error(`Get confidence score failed: ${res.status}`);
   } catch (err) {
     console.warn("Backend unavailable, using mock confidence score:", err);
-    return { ...MOCK_CONFIDENCE_SCORE, document_id: id };
+    return { ...MOCK_CONFIDENCE_SCORE, document_id: id, is_fallback: true };
   }
 }
 
@@ -238,6 +239,6 @@ export async function getBenchmarkComparison(
     throw new Error(`Get benchmarks failed: ${res.status}`);
   } catch (err) {
     console.warn("Backend unavailable, using mock benchmark comparison:", err);
-    return { ...MOCK_BENCHMARK_COMPARE, document_id: id };
+    return { ...MOCK_BENCHMARK_COMPARE, document_id: id, is_fallback: true };
   }
 }

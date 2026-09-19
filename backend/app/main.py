@@ -1,4 +1,4 @@
-﻿import os
+import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -28,6 +28,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------
+# AGENT 6: Rate Limiting Middleware (Sliding Window Per User/IP)
+# Limits: /documents upload -> 10 req/min; /chat -> 20 req/min
+# ---------------------------------------------------------------------
+import time
+from collections import defaultdict
+
+_RATE_LIMIT_STORE = defaultdict(list)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    method = request.method
+
+    limit = None
+    window = 60  # seconds
+
+    if method == "POST" and path == "/documents":
+        limit = 10
+    elif method == "POST" and "/chat" in path:
+        limit = 20
+
+    if limit is not None:
+        auth_header = request.headers.get("authorization", "")
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        user_key = f"{auth_header[:30]}_{client_ip}" if auth_header else client_ip
+        bucket_key = f"{path}:{user_key}"
+
+        now = time.time()
+        timestamps = [t for t in _RATE_LIMIT_STORE[bucket_key] if now - t < window]
+        _RATE_LIMIT_STORE[bucket_key] = timestamps
+
+        if len(timestamps) >= limit:
+            retry_after = max(1, int(window - (now - timestamps[0])))
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": f"Rate limit exceeded. Maximum {limit} requests per minute allowed.",
+                    "retry_after": retry_after
+                },
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": str(limit),
+                    "X-RateLimit-Remaining": "0"
+                }
+            )
+        _RATE_LIMIT_STORE[bucket_key].append(now)
+
+    response = await call_next(request)
+    return response
 
 # Register stub service routers
 app.include_router(auth.router)

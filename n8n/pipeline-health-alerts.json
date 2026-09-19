@@ -1,0 +1,239 @@
+{
+  "id": "m3OJ0OVltPRGshtJ",
+  "name": "pipeline-health-alerts",
+  "active": true,
+  "isArchived": false,
+  "versionId": "9a273445-4b83-4d23-ae09-40808cc1a91a",
+  "activeVersionId": "9a273445-4b83-4d23-ae09-40808cc1a91a",
+  "triggerCount": 1,
+  "nodeCount": 7,
+  "createdAt": "2026-09-18T05:50:05.291Z",
+  "updatedAt": "2026-09-18T05:50:05.291Z",
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "tags": [],
+  "parentFolderId": null,
+  "description": "Monitors backend API uptime and health status periodically, triggering ops alerts upon degradation or outage",
+  "scopes": [
+    "execution:reveal",
+    "workflow:create",
+    "workflow:delete",
+    "workflow:disableRedaction",
+    "workflow:enableRedaction",
+    "workflow:execute",
+    "workflow:execute-chat",
+    "workflow:export",
+    "workflow:import",
+    "workflow:list",
+    "workflow:move",
+    "workflow:publish",
+    "workflow:read",
+    "workflow:share",
+    "workflow:unpublish",
+    "workflow:unshare",
+    "workflow:update"
+  ],
+  "canExecute": true,
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Backend Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backend Health": {
+      "main": [
+        [
+          {
+            "node": "Is Backend Healthy?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Backend Outage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Check Backend Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Backend Healthy?": {
+      "main": [
+        [
+          {
+            "node": "Record Healthy Heartbeat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Backend Degraded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "7cfefc03-af4b-49d3-b508-2133dedef105",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        96
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "d372f9e0-4c7d-45cd-a8dd-c8aa68a88072",
+      "name": "Check Backend Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        192
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://busy-kiwis-guess.loca.lt/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Bypass-Tunnel-Reminder",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "4a3e36a6-6f70-4f93-9c1f-479d836040f0",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        288
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "460c0055-bf41-4426-9cc5-249b53a073e7",
+      "name": "Is Backend Healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        96
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "healthy"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "f71f49f5-306f-4e1e-b01d-889612d057f2",
+      "name": "Record Healthy Heartbeat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const item = $input.item.json;\nreturn {\n  json: {\n    status: \"healthy\",\n    service: item.service || \"Money Docs Decoded Backend API\",\n    version: item.version || \"1.0.0\",\n    checked_at: new Date().toISOString(),\n    message: \"Backend health check passed successfully.\"\n  }\n};"
+      }
+    },
+    {
+      "id": "968274a8-163f-4857-a281-5f23a2425c23",
+      "name": "Alert Backend Degraded",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const item = $input.item.json;\nreturn {\n  json: {\n    severity: \"WARNING\",\n    alert: \"OPS_ALERT: Backend reported degraded health status\",\n    details: item,\n    timestamp: new Date().toISOString()\n  }\n};"
+      }
+    },
+    {
+      "id": "500a565a-be59-455e-88ab-0155a9851e8e",
+      "name": "Alert Backend Outage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        288
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const item = $input.item.json;\nreturn {\n  json: {\n    severity: \"CRITICAL\",\n    alert: \"OPS_ALERT: Backend service unreachable or health endpoint failed\",\n    error: item.error ? item.error.message : (item.message || \"Connection failed\"),\n    timestamp: new Date().toISOString()\n  }\n};"
+      }
+    }
+  ],
+  "nodeGroups": [],
+  "activeVersion": {
+    "sameAsDraft": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "name": "discover-new-sources",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "monthsInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Monthly Discovery Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [100, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.duckduckgo.com/?q=IRDAI+public+disclosures+health+insurance+policy+wordings+filetype%3Apdf&format=json",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Search Insurer Disclosures",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn [{\n  json: {\n    discovered_at: new Date().toISOString(),\n    source_candidates: [\n      {\n        url: \"https://www.irdai.gov.in/public-disclosures\",\n        issuer: \"IRDAI Industry Disclosures\",\n        status: \"pending_human_review\"\n      }\n    ]\n  }\n}];"
+      },
+      "id": "3",
+      "name": "Filter Candidates for Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 200]
+    }
+  ],
+  "connections": {
+    "Monthly Discovery Cron": {
+      "main": [
+        [
+          {
+            "node": "Search Insurer Disclosures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Insurer Disclosures": {
+      "main": [
+        [
+          {
+            "node": "Filter Candidates for Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

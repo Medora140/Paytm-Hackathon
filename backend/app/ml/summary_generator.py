@@ -170,8 +170,10 @@ def generate_plain_language_summary(
         try:
             from google.genai import types
 
+            from app.ml.pii import redact_pii
+
             doc_text = "\n\n".join([
-                f"[Page {c.get('page_number', 1)}] {c.get('clause_label', '')}\n{c.get('text', '')}"
+                f"[Page {c.get('page_number', 1)}] {c.get('clause_label', '')}\n{redact_pii(c.get('text', ''))}"
                 for c in chunks[:15]  # Top 15 chunks
             ])
 

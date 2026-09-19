@@ -79,5 +79,5 @@ async def chat_with_document(
     Verified to ensure the document belongs to the authenticated user.
     """
     _verify_document_ownership(id, current_user["id"])
-    return ml_service.chat_with_document(document_id=id, payload=payload)
+    return ml_service.chat_with_document(document_id=id, payload=payload, user_id=current_user["id"])
 

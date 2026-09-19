@@ -31,6 +31,42 @@ async def upload_document(
     """
     file_bytes = await file.read()
     filename = file.filename or "uploaded_document.pdf"
+    
+    # -----------------------------------------------------------------
+    # AGENT 6: Upload Validation (Size & File-Type Verification)
+    # -----------------------------------------------------------------
+    MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB limit
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty (0 bytes)."
+        )
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File size ({len(file_bytes)} bytes) exceeds the maximum allowed limit of 25 MB."
+        )
+
+    # Validate file extension and magic byte headers
+    lower_name = filename.lower()
+    allowed_exts = (".pdf", ".png", ".jpg", ".jpeg", ".webp")
+    if not any(lower_name.endswith(ext) for ext in allowed_exts):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file extension for '{filename}'. Allowed extensions: {', '.join(allowed_exts)}."
+        )
+
+    is_pdf = file_bytes.startswith(b"%PDF-")
+    is_png = file_bytes.startswith(b"\x89PNG")
+    is_jpeg = file_bytes.startswith(b"\xff\xd8\xff")
+    is_webp = len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP"
+
+    if not (is_pdf or is_png or is_jpeg or is_webp):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file format or corrupted header. Only genuine PDF and image scans are accepted."
+        )
+
     doc_id = str(uuid.uuid4())
     doc_type = document_type or DocumentType.HEALTH_INSURANCE
     user_id = current_user["id"]

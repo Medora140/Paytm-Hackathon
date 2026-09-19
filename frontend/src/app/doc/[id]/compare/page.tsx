@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { BenchmarkCompareResponse } from "@/types";
 import { getBenchmarkComparison } from "@/lib/api";
+import FallbackWarningBanner from "@/components/FallbackWarningBanner";
 
 export default function ComparePage({
   params,
@@ -59,6 +60,7 @@ export default function ComparePage({
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {benchmarks.is_fallback && <FallbackWarningBanner />}
       {/* Header */}
       <div className="bg-canvas rounded-3xl p-6 shadow-sm border border-ink/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
