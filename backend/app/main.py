@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from app.errors import ChunksNotFoundError, GeminiUnavailableError
+from app.errors import ChunksNotFoundError, SarvamUnavailableError
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
@@ -97,8 +97,8 @@ async def chunks_not_found_handler(_request: Request, exc: ChunksNotFoundError):
     )
 
 
-@app.exception_handler(GeminiUnavailableError)
-async def gemini_unavailable_handler(_request: Request, exc: GeminiUnavailableError):
+@app.exception_handler(SarvamUnavailableError)
+async def sarvam_unavailable_handler(_request: Request, exc: SarvamUnavailableError):
     return JSONResponse(
         status_code=503,
         content={"detail": str(exc), "reason": exc.reason},

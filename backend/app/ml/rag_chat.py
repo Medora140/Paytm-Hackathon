@@ -1,327 +1,102 @@
 import json
-import logging
-import os
 import re
 import uuid
+from collections import Counter
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
-from dotenv import load_dotenv
-from app.schemas import ChatResponse, CitationItem
-from app.ml.gemini_client import (
-    get_gemini_client,
-    get_last_gemini_error,
-    probe_gemini_connectivity,
-    generate_gemini_content,
-)
-
-logger = logging.getLogger("app.ml.rag_chat")
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
-
-load_dotenv()
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-# Out-of-scope keywords that trigger immediate refusal
-OUT_OF_SCOPE_TOPICS = [
-    "capital of", "weather in", "how to cook", "recipe", "who is the president",
-    "stock price of apple", "prescribe", "antibiotics", "medical diagnosis",
-    "pasta carbonara", "write a poem", "who won the", "football score"
-]
-
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
+
+from app.errors import SarvamUnavailableError
 from app.ingestion.embedder import get_embedder
+from app.ml.pii import redact_pii
+from app.ml.sarvam_client import sarvam_client
+from app.schemas import ChatResponse, CitationItem
 
 
-def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
-    """
-    Calculates cosine similarity between two 384-dimensional vectors.
-    """
-    a = np.array(vec_a, dtype=np.float32)
-    b = np.array(vec_b, dtype=np.float32)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return float(np.dot(a, b) / (norm_a * norm_b))
+def _tokens(value: str) -> List[str]:
+    return re.findall(r"[a-z0-9]{2,}", value.lower())
+
+
+def _cosine(a: List[float], b: List[float]) -> float:
+    left, right = np.array(a, dtype=np.float32), np.array(b, dtype=np.float32)
+    denominator = np.linalg.norm(left) * np.linalg.norm(right)
+    return float(np.dot(left, right) / denominator) if denominator else 0.0
 
 
 class GroundedRAGChat:
-    """
-    Grounded RAG Conversational Engine adhering strictly to §4 guardrails:
-    - Answers only from retrieved chunks
-    - Rejects questions unsupported by the provided document chunks
-    - Performs pgvector semantic similarity search over document chunks
-    - Cites page numbers and exact quotes
-    """
+    """Hybrid retrieval + citation-constrained Sarvam reasoning for noisy PDFs."""
 
-    def __init__(self, gemini_api_key: Optional[str] = None):
-        self.api_key = gemini_api_key or GEMINI_API_KEY
-
-    def _get_client(self):
-        """Returns the cached verified Gemini client instance, or None if unavailable."""
-        return get_gemini_client(api_key=self.api_key)
-
-    def retrieve_relevant_chunks(
-        self,
-        query: str,
-        chunks: List[Dict[str, Any]],
-        top_k: int = 3
-    ) -> List[Tuple[Dict[str, Any], float]]:
-        """
-        Retrieves top-k most relevant chunks using real vector similarity search.
-        Embeds query with sentence-transformers/all-MiniLM-L6-v2 (384-dim)
-        and scores chunks via cosine similarity against pgvector embeddings.
-        """
+    def retrieve_relevant_chunks(self, query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
         if not chunks:
             return []
-
         embedder = get_embedder()
-        query_vec = embedder.embed_query(query)
-        if not query_vec:
-            return []
-
-        # If any chunks lack an embedding, compute it via SentenceTransformer
-        chunks_to_embed = [c for c in chunks if not c.get("embedding")]
-        if chunks_to_embed:
-            texts = [c.get("text", "") for c in chunks_to_embed]
-            computed = embedder.embed_texts(texts)
-            for c, emb in zip(chunks_to_embed, computed):
-                c["embedding"] = emb
-
-        scored_chunks = []
+        query_vector = embedder.embed_query(query)
+        query_terms = set(_tokens(query))
+        document_frequency = Counter(term for chunk in chunks for term in set(_tokens(chunk.get("text", ""))))
+        total_chunks = len(chunks)
+        candidates = []
         for chunk in chunks:
-            raw_emb = chunk.get("embedding")
-            if isinstance(raw_emb, str):
+            text = chunk.get("text", "")
+            embedding = chunk.get("embedding")
+            if isinstance(embedding, str):
                 try:
-                    chunk_vec = json.loads(raw_emb)
-                except Exception:
-                    chunk_vec = [float(x) for x in raw_emb.strip("[]").split(",") if x.strip()]
-            else:
-                chunk_vec = raw_emb
+                    embedding = json.loads(embedding)
+                except json.JSONDecodeError:
+                    embedding = None
+            if not embedding:
+                embedding = embedder.embed_texts([text])[0]
+                chunk["embedding"] = embedding
+            semantic = max(0.0, _cosine(query_vector, embedding))
+            terms = set(_tokens(text)) | set(_tokens(chunk.get("clause_label", "")))
+            lexical = sum(1 / (1 + document_frequency[term]) for term in query_terms & terms)
+            lexical /= max(1, len(query_terms))
+            # Semantic retrieval survives OCR noise; lexical overlap anchors exact clauses, fees and dates.
+            candidates.append((chunk, 0.72 * semantic + 0.28 * lexical))
+        candidates.sort(key=lambda item: item[1], reverse=True)
 
-            sim = _cosine_similarity(query_vec, chunk_vec)
-            scored_chunks.append((chunk, sim))
+        selected: List[Tuple[Dict[str, Any], float]] = []
+        selected_pages = set()
+        for chunk, score in candidates:
+            page = chunk.get("page_number")
+            if page not in selected_pages or len(selected) < 2:
+                selected.append((chunk, score))
+                selected_pages.add(page)
+            if len(selected) == top_k:
+                break
+        return selected
 
-        scored_chunks.sort(key=lambda x: x[1], reverse=True)
-        return scored_chunks[:top_k]
-
-    def chat(
-        self,
-        document_id: str,
-        question: str,
-        chunks: List[Dict[str, Any]],
-        language: str = "en"
-    ) -> ChatResponse:
-        """
-        Executes grounded Q&A over the document chunks.
-        If the question is out of scope or not found in chunks, returns refusal.
-        """
-        q_lower = question.lower()
-        
-        # 1. Quick Guardrail Check: Disallowed / Out-of-Scope query
-        if any(topic in q_lower for topic in OUT_OF_SCOPE_TOPICS):
-            return ChatResponse(
-                id=f"msg_{uuid.uuid4().hex[:12]}",
-                document_id=document_id,
-                role="assistant",
-                content=(
-                    "This information is not found in the provided document chunks. "
-                    "I am strictly configured to answer questions grounded in your uploaded document."
-                ),
-                cited_chunk_ids=[],
-                citations=[],
-                created_at=datetime.utcnow()
-            )
-
-        # 2. Retrieve top chunks
-        top_scored = self.retrieve_relevant_chunks(question, chunks, top_k=3)
-        relevant_chunks = [item[0] for item in top_scored if item[1] > 0.05]
-
-        # If zero chunks match the user question, refuse
-        if not relevant_chunks or (top_scored and top_scored[0][1] == 0.0):
-            return ChatResponse(
-                id=f"msg_{uuid.uuid4().hex[:12]}",
-                document_id=document_id,
-                role="assistant",
-                content=(
-                    "This information is not found in the provided document chunks. "
-                    "The document does not contain details related to your query."
-                ),
-                cited_chunk_ids=[],
-                citations=[],
-                created_at=datetime.utcnow()
-            )
-
-        # 3. Formulate Prompt & Call Gemini
-        client = self._get_client()
-        last_error = get_last_gemini_error() or "Gemini client unavailable or offline"
-
-        if client is not None:
-            try:
-                from google.genai import types
-
-                from app.ml.pii import redact_pii
-
-                chunks_context = "\n\n".join([
-                    f"[Chunk ID: {c.get('id')} | Page: {c.get('page_number')} | Section: {c.get('clause_label', '')}]\n{redact_pii(c.get('text', ''))}"
-                    for c in relevant_chunks
-                ])
-
-                prompt = f"""
-You are a trusted financial document assistant for Money Docs Decoded.
-Answer the user's question using ONLY the provided document chunks below.
-
-STRICT GUARDRAILS:
-1. You must answer ONLY from the provided chunks. DO NOT extrapolate, assume, or bring in outside world knowledge.
-2. If the answer is NOT explicitly supported by the provided chunks, reply with:
-   "This information is not found in the provided document chunks."
-3. If the answer is supported, provide a clear, plain-language answer and list the cited chunks.
-
-DOCUMENT CHUNKS:
-{chunks_context}
-
-USER QUESTION:
-{question}
-"""
-                logger.info(
-                    "[LIVE GEMINI CALL] [rag_chat] Initiating live Gemini RAG chat (model=%s, doc_id=%s, question='%s')...",
-                    MODEL_NAME,
-                    document_id,
-                    question[:50]
-                )
-
-                response, used_model = generate_gemini_content(
-                    client=client,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema={
-                            "type": "OBJECT",
-                            "properties": {
-                                "found_in_document": {"type": "BOOLEAN"},
-                                "answer": {"type": "STRING"},
-                                "cited_chunk_ids": {
-                                    "type": "ARRAY",
-                                    "items": {"type": "STRING"}
-                                },
-                                "citations": {
-                                    "type": "ARRAY",
-                                    "items": {
-                                        "type": "OBJECT",
-                                        "properties": {
-                                            "chunk_id": {"type": "STRING"},
-                                            "page_number": {"type": "INTEGER"},
-                                            "clause_label": {"type": "STRING"},
-                                            "quote": {"type": "STRING"}
-                                        },
-                                        "required": ["chunk_id", "page_number", "quote"]
-                                    }
-                                }
-                            },
-                            "required": ["found_in_document", "answer"]
-                        },
-                        temperature=0.1
-                    )
-                )
-
-                result_data = json.loads(response.text)
-                if not result_data.get("found_in_document", True) or "not found" in result_data.get("answer", "").lower():
-                    logger.info("[RAG GUARDRAIL] [rag_chat] Live response indicates question is unsupported by chunks for doc '%s'.", document_id)
-                    return ChatResponse(
-                        id=f"msg_{uuid.uuid4().hex[:12]}",
-                        document_id=document_id,
-                        role="assistant",
-                        content="This information is not found in the provided document chunks.",
-                        cited_chunk_ids=[],
-                        citations=[],
-                        created_at=datetime.utcnow()
-                    )
-
-                # Assemble citations
-                citations = []
-                for c_item in result_data.get("citations", []):
-                    citations.append(
-                        CitationItem(
-                            chunk_id=c_item.get("chunk_id", relevant_chunks[0]["id"]),
-                            page_number=c_item.get("page_number", relevant_chunks[0]["page_number"]),
-                            clause_label=c_item.get("clause_label", relevant_chunks[0].get("clause_label")),
-                            quote=c_item.get("quote", relevant_chunks[0]["text"][:100])
-                        )
-                    )
-
-                cited_ids = result_data.get("cited_chunk_ids") or [c.chunk_id for c in citations]
-                if not cited_ids and citations:
-                    cited_ids = [c.chunk_id for c in citations]
-
-                logger.info(
-                    "[LIVE GEMINI SUCCESS] [rag_chat] Successfully generated live RAG response for doc '%s' (model=%s, cited_chunks=%d)",
-                    document_id,
-                    MODEL_NAME,
-                    len(cited_ids)
-                )
-
-                return ChatResponse(
-                    id=f"msg_{uuid.uuid4().hex[:12]}",
-                    document_id=document_id,
-                    role="assistant",
-                    content=result_data["answer"],
-                    cited_chunk_ids=cited_ids,
-                    citations=citations,
-                    created_at=datetime.utcnow()
-                )
-
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                logger.warning(
-                    "\n" + "=" * 68 + "\n"
-                    "[FALLBACK WARNING] [rag_chat] Live Gemini RAG call FAILED for doc '%s'!\n"
-                    "Reason: %s: %s\n"
-                    "Model: %s\n"
-                    "Action: Falling back to deterministic extracted chunk response.\n"
-                    + "=" * 68,
-                    document_id,
-                    type(e).__name__,
-                    e,
-                    MODEL_NAME
-                )
-
-        # 4. Fallback deterministic answering from relevant chunks
-        top_chunk = relevant_chunks[0]
-        page_num = top_chunk["page_number"]
-        label = top_chunk.get("clause_label", f"Page {page_num}")
-        quote_text = top_chunk["text"][:160] + "..."
-
-        logger.warning(
-            "\n" + "=" * 68 + "\n"
-            "[FALLBACK WARNING] [rag_chat] Serving fallback deterministic extracted chunk response for doc '%s'!\n"
-            "Reason: %s\n"
-            "Query: '%s'\n"
-            "Action: Extracting grounded quote from top chunk ID '%s' (Page %s).\n"
-            + "=" * 68,
-            document_id,
-            last_error,
-            question[:80],
-            top_chunk["id"],
-            page_num
+    def chat(self, document_id: str, question: str, chunks: List[Dict[str, Any]], language: str = "en") -> ChatResponse:
+        ranked = self.retrieve_relevant_chunks(question, chunks)
+        if not ranked or ranked[0][1] < 0.08:
+            return self._not_found(document_id)
+        relevant = [chunk for chunk, _ in ranked]
+        context = "\n\n".join(
+            f"[ID:{c.get('id')} | PAGE:{c.get('page_number')} | SECTION:{c.get('clause_label', 'Untitled')}]\n{redact_pii(c.get('text', ''))}"
+            for c in relevant
         )
+        target_language = "Hindi in Devanagari" if language.lower() in {"hi", "hindi"} else "English"
+        result = sarvam_client.complete_json(f"""
+Answer QUESTION in {target_language}, using only SOURCE. Explain the reasoning by connecting the relevant clause words to the answer.
+Never use facts outside SOURCE. If support is insufficient set found_in_document=false.
+For every citation, copy a short exact quote from the matching source section.
+Return exactly {{"found_in_document":boolean,"answer":string,"citations":[{{"chunk_id":string,"page_number":number,"clause_label":string,"quote":string}}]}}.
+QUESTION: {question}
+SOURCE:
+{context}
+""")
+        if not result.get("found_in_document"):
+            return self._not_found(document_id)
+        allowed = {str(c.get("id")): c for c in relevant}
+        citations = []
+        for item in result.get("citations", []):
+            source = allowed.get(str(item.get("chunk_id")))
+            if source:
+                citations.append(CitationItem(chunk_id=str(source["id"]), page_number=int(source.get("page_number", 1)), clause_label=source.get("clause_label"), quote=str(item.get("quote", ""))[:300]))
+        if not citations:
+            raise SarvamUnavailableError("Sarvam response omitted source citations.")
+        return ChatResponse(id=f"msg_{uuid.uuid4().hex[:12]}", document_id=document_id, role="assistant", content=str(result.get("answer", "")), cited_chunk_ids=[item.chunk_id for item in citations], citations=citations, created_at=datetime.utcnow())
 
-        return ChatResponse(
-            id=f"msg_{uuid.uuid4().hex[:12]}",
-            document_id=document_id,
-            role="assistant",
-            content=f"According to {label} (Page {page_num}): {top_chunk['text']}",
-            cited_chunk_ids=[top_chunk["id"]],
-            citations=[
-                CitationItem(
-                    chunk_id=top_chunk["id"],
-                    page_number=page_num,
-                    clause_label=label,
-                    quote=quote_text
-                )
-            ],
-            is_fallback=True,
-            created_at=datetime.utcnow()
-        )
+    @staticmethod
+    def _not_found(document_id: str) -> ChatResponse:
+        return ChatResponse(id=f"msg_{uuid.uuid4().hex[:12]}", document_id=document_id, role="assistant", content="This information is not found in the provided document chunks.", cited_chunk_ids=[], citations=[], created_at=datetime.utcnow())

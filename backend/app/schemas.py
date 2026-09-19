@@ -140,7 +140,6 @@ class DocumentSummaryResponse(BaseModel):
     waiting_periods: List[str] = Field(default_factory=list, description="Specific waiting intervals before coverage applies")
     notable_terms: List[str] = Field(default_factory=list, description="Other critical fine-print terms")
     model_version: str
-    is_fallback: bool = False
     generated_at: datetime
 
 
@@ -197,7 +196,6 @@ class ChatResponse(BaseModel):
     content: str
     cited_chunk_ids: List[str] = Field(default_factory=list)
     citations: List[CitationItem] = Field(default_factory=list)
-    is_fallback: bool = False
     created_at: datetime
 
 

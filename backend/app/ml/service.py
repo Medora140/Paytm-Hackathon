@@ -1,10 +1,9 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
-from app.identity import DEMO_USER_ID
 from app.ingestion.repository import repository as doc_repository
 from app.ml.confidence_score import calculate_confidence_score
 from app.ml.knowledge_base import RedFlagKnowledgeBase
-from app.ml.mock_data import get_chunks_for_document
+from app.ml.chunk_resolver import get_chunks_for_document
 from app.ml.rag_chat import GroundedRAGChat
 from app.ml.red_flag_detector import RuleBasedRedFlagDetector
 from app.ml.repository import ml_repository
@@ -53,7 +52,7 @@ class MLService:
             logger.info("Serving cached summary for doc '%s' (lang=%s)", document_id, language)
             return cached
 
-        # 2. Compute summary via Gemini
+        # 2. Compute a source-grounded summary through Sarvam
         doc_chunks = chunks or get_chunks_for_document(document_id)
         summary = generate_plain_language_summary(
             document_id=document_id,
@@ -230,7 +229,9 @@ class MLService:
         Conversational grounded RAG Q&A with strict document boundary guardrails.
         Persists both the user question and assistant response into chat_messages.
         """
-        effective_user_id = user_id or DEMO_USER_ID
+        if not user_id:
+            raise ValueError("A verified user_id is required to save chat messages.")
+        effective_user_id = user_id
 
         # 1. Persist user message to Supabase
         ml_repository.save_chat_message(

@@ -85,7 +85,6 @@ class MLRepository:
                         waiting_periods=row.get("waiting_periods", []) or [],
                         notable_terms=row.get("notable_terms", []) or [],
                         model_version=row.get("model_version", "persisted"),
-                        is_fallback=False,
                         generated_at=_parse_iso_timestamp(row.get("generated_at"))
                     )
                     self._summaries[cache_key] = summary.model_dump()

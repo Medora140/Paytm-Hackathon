@@ -1,7 +1,7 @@
 """
 PII Redaction Engine for Money Docs Decoded.
 Implements field-aware and validated pattern matching (not naive substring replacement)
-to strip/mask sensitive consumer identifiers before document chunk text is transmitted to Gemini.
+to strip/mask sensitive consumer identifiers before document chunk text is transmitted to Sarvam AI.
 
 Redaction Scope (per aiEngine.md):
 - Personal names (with titles / contextual headers)

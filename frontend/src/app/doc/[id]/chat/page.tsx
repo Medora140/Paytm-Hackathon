@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { CitationItem } from "@/types";
 import { sendChatMessage } from "@/lib/api";
-import FallbackWarningBanner from "@/components/FallbackWarningBanner";
 
 interface Message {
   id: string;
@@ -152,9 +151,6 @@ export default function ChatPage({
           View Dashboard
         </Link>
       </div>
-
-      {/* Fallback Warning Banner */}
-      {messages.some((m) => m.isFallback) && <FallbackWarningBanner />}
 
       {/* Message List Area */}
       <div className="flex-1 overflow-y-auto bg-canvas rounded-3xl p-4 sm:p-6 border border-ink/10 shadow-sm space-y-6">

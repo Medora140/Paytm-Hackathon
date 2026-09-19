@@ -6,11 +6,9 @@ import {
   MessageSquare,
   ArrowRight,
   ShieldCheck,
-  Zap,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import { MOCK_DOCUMENT_ID } from "../lib/mockData";
 
 export default function LandingPage() {
   return (
@@ -39,15 +37,6 @@ export default function LandingPage() {
           >
             <span>Upload a document</span>
             <ArrowRight className="w-4 h-4" />
-          </Link>
-
-          {/* Sample Document Demo Flow Button */}
-          <Link
-            href={`/doc/${MOCK_DOCUMENT_ID}`}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 bg-canvas hover:bg-canvas-soft text-ink font-bold text-sm rounded-3xl border border-ink/15 shadow-xs transition-colors"
-          >
-            <Zap className="w-4 h-4 text-warning-deep" />
-            <span>Try Sample Document (Star Health 1-Click Demo)</span>
           </Link>
         </div>
       </section>

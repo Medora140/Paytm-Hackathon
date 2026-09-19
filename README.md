@@ -13,7 +13,7 @@ Plain-language financial document analyzer, red-flag detector, and benchmark int
 
 ## Getting Started
 
-1. Copy .env.example to .env and fill in necessary configuration keys (Gemini API, Supabase, n8n webhook secret).
+1. Copy .env.example to .env and fill in necessary configuration keys (Sarvam AI, Supabase, n8n webhook secret).
 2. Set up backend:
    `ash
    cd backend

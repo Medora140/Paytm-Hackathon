@@ -36,7 +36,7 @@ Use this branch as the production branch in both Vercel and Render, or merge it 
 4. Copy the project URL, the browser-safe anon key, and the server-only service-role key.
 5. Configure the Auth URL settings with your Vercel URL as the Site URL and add that URL to Redirect URLs.
 
-Never place `SUPABASE_SERVICE_ROLE_KEY` or `GEMINI_API_KEY` in Vercel: they are backend secrets only.
+Never place `SUPABASE_SERVICE_ROLE_KEY` or `SARVAM_API_KEY` in Vercel: they are backend secrets only.
 
 ## 3. Deploy the API on Render
 
@@ -47,11 +47,11 @@ Never place `SUPABASE_SERVICE_ROLE_KEY` or `GEMINI_API_KEY` in Vercel: they are 
    | --- | --- |
    | `SUPABASE_URL` | Supabase project URL |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key |
-   | `GEMINI_API_KEY` | Google Gemini API key |
+   | `SARVAM_API_KEY` | Sarvam AI API key |
    | `N8N_WEBHOOK_SECRET` | Long random secret, if n8n webhooks are used |
    | `ALLOWED_ORIGINS` | Your Vercel URL, e.g. `https://your-app.vercel.app` |
 
-   Keep the Blueprint defaults for `REQUIRE_REMOTE_STORAGE=true`, `SUPABASE_STORAGE_BUCKET=InsuranceFiles`, and `GEMINI_MODEL=gemini-2.5-flash` unless you need different values.
+   Keep the Blueprint defaults for `REQUIRE_REMOTE_STORAGE=true`, `SUPABASE_STORAGE_BUCKET=InsuranceFiles`, and `SARVAM_MODEL=sarvam-m` unless you need different values.
 3. Deploy and open `https://YOUR-RENDER-SERVICE.onrender.com/health`. It must return `status: healthy`.
 
 The Docker image installs Tesseract, so OCR of scanned PDFs works on Render. The first embedding request may be slower while the sentence-transformer model is downloaded; use a paid Render instance for dependable demo latency.

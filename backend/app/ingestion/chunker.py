@@ -44,7 +44,7 @@ class ClauseChunker:
 
         for page in pages_data:
             page_num = page.get("page_number", 1)
-            raw_text = (page.get("text") or "").strip()
+            raw_text = self._normalise_extracted_text(page.get("text") or "")
 
             if not raw_text:
                 continue
@@ -108,6 +108,15 @@ class ClauseChunker:
                             })
 
         return chunks
+
+    @staticmethod
+    def _normalise_extracted_text(text: str) -> str:
+        """Repair common PDF/OCR artefacts before section detection and embedding."""
+        text = text.replace("\u00ad", "")  # soft hyphen
+        text = re.sub(r"(?<=\w)-\s*\n\s*(?=\w)", "", text)  # hyphenated line wrap
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
 
     def _chunk_plain_page(self, page_num: int, text: str, chunks_out: List[Dict[str, Any]]):
         """Chunks a page without header patterns by paragraph / length."""

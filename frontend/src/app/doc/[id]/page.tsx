@@ -30,7 +30,6 @@ import ConfidenceScoreWidget from "@/components/ConfidenceScoreWidget";
 import SummaryCard from "@/components/SummaryCard";
 import RedFlagsPanel from "@/components/RedFlagsPanel";
 import BenchmarkStrip from "@/components/BenchmarkStrip";
-import FallbackWarningBanner from "@/components/FallbackWarningBanner";
 
 export default function DocumentDashboardPage({
   params,
@@ -113,18 +112,8 @@ export default function DocumentDashboardPage({
     );
   }
 
-  const isAnyFallback = Boolean(
-    document?.is_fallback ||
-    summary?.is_fallback ||
-    redFlagsData?.is_fallback ||
-    scoreData?.is_fallback
-  );
-
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Fallback Banner when live backend data is unavailable */}
-      {isAnyFallback && <FallbackWarningBanner />}
-
       {/* Top Header Card */}
       <div className="bg-canvas rounded-3xl p-6 sm:p-8 shadow-sm border border-ink/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
         <div className="space-y-1.5">

@@ -3,7 +3,6 @@ from datetime import datetime
 import logging
 from typing import Any, Dict, List, Optional
 from app.db import StubSupabaseClient, get_db
-from app.identity import DEMO_USER_EMAIL, DEMO_USER_ID
 from app.runtime_flags import allow_in_memory_stores
 from app.schemas import DocumentStatus, DocumentType
 
@@ -80,7 +79,6 @@ class DocumentRepository:
             db = get_db()
             if isinstance(db, StubSupabaseClient) or db.__class__.__name__ == "StubSupabaseClient":
                 return "StubSupabaseClient cannot persist documents"
-            self._ensure_demo_user(db)
             payload = {
                 "id": doc_data["id"],
                 "user_id": doc_data["user_id"],
@@ -98,23 +96,6 @@ class DocumentRepository:
         except Exception as e:
             logger.exception("Supabase documents.insert failed: %s", e)
             return f"{type(e).__name__}: {e}"
-
-    def _ensure_demo_user(self, db: Any) -> None:
-        try:
-            existing = db.table("users").select("id").eq("id", DEMO_USER_ID).execute()
-            rows = existing.data if hasattr(existing, "data") else []
-            if rows:
-                return
-            db.table("users").insert({
-                "id": DEMO_USER_ID,
-                "email": DEMO_USER_EMAIL,
-                "plan_tier": "free",
-                "preferred_language": "en",
-                "data_retention_opt_in": False,
-            }).execute()
-        except Exception as e:
-            logger.error("Failed to ensure demo user %s: %s", DEMO_USER_ID, e)
-            raise
 
     def update_status(
         self,

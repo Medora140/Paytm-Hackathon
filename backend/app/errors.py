@@ -9,9 +9,9 @@ class ChunksNotFoundError(Exception):
         )
 
 
-class GeminiUnavailableError(Exception):
-    """Raised when Gemini is required but the live API cannot be used."""
+class SarvamUnavailableError(Exception):
+    """Raised when Sarvam is required but the live API cannot be used."""
 
     def __init__(self, reason: str):
         self.reason = reason
-        super().__init__(f"Gemini is unavailable: {reason}")
+        super().__init__(f"Sarvam is unavailable: {reason}")

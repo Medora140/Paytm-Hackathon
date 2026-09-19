@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FileText, ChevronDown, Globe, ShieldAlert, ArrowUpRight, LogOut, User } from "lucide-react";
-import { MOCK_DOCUMENTS_LIST } from "../lib/mockData";
+import { listDocuments } from "../lib/api";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Navigation() {
@@ -13,6 +13,7 @@ export default function Navigation() {
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState<"en" | "hi">("en");
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [documents, setDocuments] = useState<Array<{id: string; filename: string; issuer_name?: string | null; confidence_score?: number | null}>>([]);
 
   // Extract active doc ID from URL if present
   const docIdMatch = pathname?.match(/\/doc\/([^/]+)/);
@@ -27,6 +28,7 @@ export default function Navigation() {
     // Check current Supabase auth session
     supabase.auth.getSession().then(({ data }) => {
       setCurrentUser(data.session?.user || null);
+      if (data.session) listDocuments().then(setDocuments).catch(() => setDocuments([]));
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -102,7 +104,7 @@ export default function Navigation() {
               <FileText className="w-3.5 h-3.5 text-body" />
               <span className="max-w-[130px] md:max-w-[180px] truncate">
                 {activeDocId
-                  ? MOCK_DOCUMENTS_LIST.find((d) => d.id === activeDocId)?.filename || "Active Policy"
+                  ? documents.find((d) => d.id === activeDocId)?.filename || "Active Policy"
                   : "Select Policy"}
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-mute" />
@@ -113,7 +115,7 @@ export default function Navigation() {
                 <div className="text-[11px] font-bold text-mute uppercase px-3 py-1 tracking-wider">
                   Switch Document
                 </div>
-                {MOCK_DOCUMENTS_LIST.map((doc) => (
+                {documents.map((doc) => (
                   <button
                     key={doc.id}
                     onClick={() => {
