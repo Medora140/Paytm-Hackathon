@@ -8,6 +8,8 @@ services:
     healthCheckPath: /health
     envVars:
       - key: REQUIRE_REMOTE_STORAGE
+        value: "false"
+      - key: ALLOW_IN_MEMORY_FALLBACKS
         value: "true"
       - key: SUPABASE_STORAGE_BUCKET
         value: InsuranceFiles

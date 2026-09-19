@@ -70,7 +70,7 @@ class DocumentRepository:
         if persist_error and not allow_in_memory_stores():
             raise RuntimeError(f"Failed to persist document '{doc_id}' to Supabase: {persist_error}")
         if persist_error:
-            logger.error("Supabase documents.insert failed (in-memory allowed): %s", persist_error)
+            logger.warning("Using in-memory document storage because Supabase is unavailable: %s", persist_error)
 
         return doc_data
 
@@ -122,7 +122,10 @@ class DocumentRepository:
         try:
             db = get_db()
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
-                payload: Dict[str, Any] = {"status": status.value if hasattr(status, "value") else str(status)}
+                payload: Dict[str, Any] = {
+                    "status": status.value if hasattr(status, "value") else str(status),
+                    "pipeline_stage": pipeline_stage,
+                }
                 if issuer_name:
                     payload["issuer_name"] = issuer_name
                 if document_type:
@@ -263,7 +266,7 @@ class DocumentRepository:
                 f"Failed to persist document_chunks for '{doc_id}' to Supabase: {persist_error}"
             )
         if persist_error:
-            logger.error("Supabase document_chunks.insert failed (in-memory allowed): %s", persist_error)
+            logger.warning("Using in-memory chunk storage because Supabase is unavailable: %s", persist_error)
 
         return len(chunk_records)
 

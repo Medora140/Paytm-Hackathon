@@ -32,7 +32,7 @@ POSSIBLE_TESSERACT_PATHS = [
     os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
 ]
 for p in POSSIBLE_TESSERACT_PATHS:
-    if p and os.path.isfile(p):
+    if pytesseract is not None and p and os.path.isfile(p):
         pytesseract.pytesseract.tesseract_cmd = p
         break
 

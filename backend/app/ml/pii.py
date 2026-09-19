@@ -138,8 +138,7 @@ def redact_pii(text: str) -> str:
 
     # 7. Redact Phone Numbers (not matching financial figures like INR 75,000)
     def _sub_phone(match):
-        start = match.start()
-        prefix = scrubbed[max(0, start - 10):start].lower()
+        prefix = match.string[max(0, match.start() - 10):match.start()].lower()
         if any(c in prefix for c in ["rs", "inr", "₹", "amount", "limit", "cap"]):
             return match.group(0)
         return REDACTED_PHONE

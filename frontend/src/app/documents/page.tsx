@@ -11,7 +11,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { DocumentListItem } from "../../types";
-import { deleteDocument, listDocuments } from "../../lib/api";
+import { deleteDocument, listDocuments, reprocessDocument } from "../../lib/api";
 import { useTranslation } from "../../lib/useTranslation";
 
 export default function DocumentsHistoryPage() {
@@ -42,16 +42,26 @@ export default function DocumentsHistoryPage() {
     }
   };
 
-  const handleRescan = (id: string) => {
+  const handleRescan = async (id: string) => {
     setRescanningId(id);
-    setTimeout(() => {
-      setRescanningId(null);
+    try {
+      await reprocessDocument(id);
+      await loadDocs();
       alert(
         isHi
-          ? "पॉलिसी का नवीनतम IRDAI ओम्बड्समैन नियमों के साथ पुनः विश्लेषण किया गया!"
-          : "Policy re-scanned successfully against latest IRDAI ombudsman knowledge base!"
+          ? "पॉलिसी को फिर से प्रसंस्करण कतार में डाल दिया गया है।"
+          : "The document has been queued for re-analysis."
       );
-    }, 1200);
+    } catch (err: any) {
+      alert(
+        isHi
+          ? "पुनः विश्लेषण शुरू नहीं हुआ। कृपया बाद में पुनः प्रयास करें।"
+          : "Re-analysis could not be started. Please try again later."
+      );
+      console.error("Reprocess failed:", err);
+    } finally {
+      setRescanningId(null);
+    }
   };
 
   return (

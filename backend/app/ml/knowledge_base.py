@@ -192,13 +192,13 @@ class RedFlagKnowledgeBase:
                         except Exception:
                             sev = SeverityLevel.MEDIUM
                         
-                        # Find original starter pattern if ID matches or clause_type matches
+                        # Normalize IDs from Supabase back to the starter pattern IDs.
                         orig_id = row.get("id")
-                        for sp in STARTER_KNOWLEDGE_BASE:
-                            import uuid
-                            if str(uuid.uuid5(uuid.NAMESPACE_DNS, sp.pattern_id)) == str(orig_id):
-                                orig_id = sp.pattern_id
-                                break
+                        starter_by_generated_id = {
+                            str(__import__("uuid").uuid5(__import__("uuid").NAMESPACE_DNS, sp.pattern_id)): sp.pattern_id
+                            for sp in STARTER_KNOWLEDGE_BASE
+                        }
+                        orig_id = starter_by_generated_id.get(str(orig_id), orig_id)
 
                         loaded.append(
                             RedFlagPattern(

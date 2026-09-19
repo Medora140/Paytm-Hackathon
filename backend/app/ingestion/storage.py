@@ -8,6 +8,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "InsuranceFiles")
 LOCAL_STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage")
 REQUIRE_REMOTE_STORAGE = os.getenv("REQUIRE_REMOTE_STORAGE", "").strip().lower() in {"1", "true", "yes"}
+REMOTE_STORAGE_CONFIGURED = bool(
+    os.getenv("SUPABASE_URL") and (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY"))
+)
 
 
 class StorageManager:
@@ -39,7 +42,9 @@ class StorageManager:
         except Exception as e:
             logger.warning("Failed to write to local storage copy: %s", e)
 
-        # Upload to Supabase Storage. A production deployment must fail closed here.
+        # Upload to Supabase Storage. A production deployment must fail closed here,
+        # but Render demos without configured Supabase credentials still need a usable
+        # local copy so the ingestion pipeline can continue instead of retrying forever.
         try:
             db = get_db()
             if hasattr(db, "storage"):
@@ -52,18 +57,23 @@ class StorageManager:
                     logger.info("Successfully uploaded %s to Supabase Storage bucket %s", storage_path, self.bucket_name)
                     return storage_path
                 except Exception as upload_err:
-                    if REQUIRE_REMOTE_STORAGE:
+                    if REQUIRE_REMOTE_STORAGE and REMOTE_STORAGE_CONFIGURED:
                         raise RuntimeError(
                             "Could not persist upload to Supabase Storage; refusing ephemeral-only storage."
                         ) from upload_err
-                    logger.debug("Supabase storage upload returned: %s (using local copy)", upload_err)
+                    logger.warning(
+                        "Supabase storage upload failed; continuing with local persistence only: %s",
+                        upload_err,
+                    )
         except Exception as e:
-            if REQUIRE_REMOTE_STORAGE:
+            if REQUIRE_REMOTE_STORAGE and REMOTE_STORAGE_CONFIGURED:
                 raise
-            logger.debug("Supabase client storage access skipped: %s", e)
+            logger.warning("Supabase client storage access skipped; using local persistence only: %s", e)
 
-        if REQUIRE_REMOTE_STORAGE:
-            raise RuntimeError("Remote object storage is required but is not configured.")
+        if REQUIRE_REMOTE_STORAGE and not REMOTE_STORAGE_CONFIGURED:
+            logger.warning(
+                "REQUIRE_REMOTE_STORAGE is enabled but Supabase is not configured; continuing with local file storage for this deployment."
+            )
         return storage_path
 
     def retrieve_file(self, storage_path: str) -> Optional[bytes]:

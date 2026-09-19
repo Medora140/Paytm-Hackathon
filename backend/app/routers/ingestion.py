@@ -13,6 +13,7 @@ from app.schemas import (
 )
 from app.ingestion.repository import repository
 from app.ingestion.pipeline import get_ingestion_pipeline
+from app.ingestion.storage import StorageManager
 
 router = APIRouter(prefix="/documents", tags=["Ingestion Service"])
 
@@ -195,3 +196,57 @@ async def delete_document(
         document_id=id,
         message="Document and associated data permanently deleted (DPDP right to erasure)."
     )
+
+
+@router.post("/{id}/reprocess", status_code=status.HTTP_202_ACCEPTED)
+async def reprocess_document(
+    id: str,
+    background_tasks: BackgroundTasks,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, str]:
+    """
+    Re-runs ingestion for an existing stored document using its persisted bytes.
+    This avoids fake UI timers and gives the document a real background re-analysis.
+    """
+    doc = repository.get_document(id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{id}' not found."
+        )
+
+    GUEST_ID = "00000000-0000-0000-0000-000000000000"
+    if doc.get("user_id") and doc.get("user_id") != current_user["id"] and current_user["id"] != GUEST_ID and doc.get("user_id") != GUEST_ID:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You do not have permission to reprocess this document."
+        )
+
+    file_bytes = StorageManager().retrieve_file(doc["storage_path"])
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored file bytes are unavailable for reprocessing."
+        )
+
+    repository.update_status(
+        doc_id=id,
+        status=DocumentStatus.UPLOADED,
+        pipeline_stage="Re-queued for re-analysis..."
+    )
+
+    pipeline = get_ingestion_pipeline()
+    background_tasks.add_task(
+        pipeline.process_document,
+        file_bytes=file_bytes,
+        filename=doc["filename"],
+        document_type=DocumentType(doc.get("document_type", "health_insurance")),
+        user_id=doc.get("user_id", current_user["id"]),
+        doc_id=id,
+    )
+
+    return {
+        "status": "queued",
+        "document_id": id,
+        "message": "Document re-analysis queued successfully."
+    }

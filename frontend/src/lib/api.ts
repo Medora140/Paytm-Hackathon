@@ -107,3 +107,12 @@ export async function getBenchmarkComparison(
 ): Promise<BenchmarkCompareResponse> {
   return request(`/documents/${id}/compare`, { headers: await headers() });
 }
+
+export async function reprocessDocument(
+  id: string
+): Promise<{ status: string; document_id: string; message: string }> {
+  return request(`/documents/${id}/reprocess`, {
+    method: "POST",
+    headers: await headers(),
+  });
+}

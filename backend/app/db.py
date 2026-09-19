@@ -97,9 +97,9 @@ class SupabaseConnectionHelper:
                     )
                     if resp.status_code in [401, 403] or resp.status_code >= 500:
                         msg = f"Supabase credentials rejected (HTTP {resp.status_code})"
-                        logger.error(msg)
+                        logger.warning(msg)
                         if allow_in_memory_stores():
-                            logger.error("ALLOW_IN_MEMORY_FALLBACKS/pytest is set; using StubSupabaseClient")
+                            logger.warning("Supabase credentials are not usable in this environment; using in-memory fallback.")
                             self._client = StubSupabaseClient(effective_url)
                             return self._client
                         raise RuntimeError(msg)
@@ -107,9 +107,9 @@ class SupabaseConnectionHelper:
                     raise
                 except Exception as ping_err:
                     msg = f"Supabase unreachable during health ping: {type(ping_err).__name__}: {ping_err}"
-                    logger.error(msg)
+                    logger.warning(msg)
                     if allow_in_memory_stores():
-                        logger.error("ALLOW_IN_MEMORY_FALLBACKS/pytest is set; using StubSupabaseClient")
+                        logger.warning("Supabase health check failed; using in-memory fallback for local/dev mode.")
                         self._client = StubSupabaseClient(effective_url)
                         return self._client
                     raise RuntimeError(msg) from ping_err
@@ -128,8 +128,8 @@ class SupabaseConnectionHelper:
                     raise
 
         if allow_in_memory_stores():
-            logger.error(
-                "Supabase is not configured. Using StubSupabaseClient because tests/ALLOW_IN_MEMORY_FALLBACKS=1."
+            logger.warning(
+                "Supabase is not configured; using in-memory fallback because local/dev mode is enabled."
             )
             self._client = StubSupabaseClient(self.supabase_url)
             return self._client

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import create_client
 
 from app.auth import get_current_user
-from app.db import get_db
+from app.db import StubSupabaseClient, get_db
 from app.schemas import (
     AuthLoginRequest,
     AuthResponse,
@@ -36,6 +36,11 @@ def _get_auth_client():
     return None
 
 
+def _has_live_supabase_db() -> bool:
+    db = get_db()
+    return bool(db) and not isinstance(db, StubSupabaseClient)
+
+
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def signup(payload: AuthSignUpRequest) -> AuthResponse:
     """
@@ -46,10 +51,10 @@ async def signup(payload: AuthSignUpRequest) -> AuthResponse:
     auth_client = _get_auth_client()
     admin_client = _get_admin_client()
     db = get_db()
-    if not auth_client or not db:
+    if not auth_client or not _has_live_supabase_db():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service unavailable.",
+            detail="Authentication service unavailable. Configure live Supabase credentials to enable auth.",
         )
 
     user_id = None
@@ -151,10 +156,10 @@ async def login(payload: AuthLoginRequest) -> AuthResponse:
     """
     auth_client = _get_auth_client()
     db = get_db()
-    if not auth_client or not db:
+    if not auth_client or not _has_live_supabase_db():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service unavailable.",
+            detail="Authentication service unavailable. Configure live Supabase credentials to enable auth.",
         )
 
     email = payload.email.strip().lower()
