@@ -43,8 +43,9 @@ class SarvamClient:
             response = httpx.post(
                 f"{self.base_url}/chat/completions",
                 headers={
+                    # Sarvam AI only accepts api-subscription-key.
+                    # Do NOT send Authorization: Bearer — it causes 401.
                     "api-subscription-key": key,
-                    "Authorization": f"Bearer {key}",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -55,7 +56,7 @@ class SarvamClient:
                     ],
                     "temperature": 0.1,
                 },
-                timeout=45.0,
+                timeout=60.0,
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]

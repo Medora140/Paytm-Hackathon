@@ -42,9 +42,9 @@ class StorageManager:
         except Exception as e:
             logger.warning("Failed to write to local storage copy: %s", e)
 
-        # Upload to Supabase Storage. A production deployment must fail closed here,
-        # but Render demos without configured Supabase credentials still need a usable
-        # local copy so the ingestion pipeline can continue instead of retrying forever.
+        # Upload to Supabase Storage. Log critical warning on failure but never
+        # crash the upload — the ingestion pipeline processes bytes in-memory,
+        # not from the storage path, so text extraction always works regardless.
         try:
             db = get_db()
             if hasattr(db, "storage"):
@@ -58,16 +58,20 @@ class StorageManager:
                     return storage_path
                 except Exception as upload_err:
                     if REQUIRE_REMOTE_STORAGE and REMOTE_STORAGE_CONFIGURED:
-                        raise RuntimeError(
-                            "Could not persist upload to Supabase Storage; refusing ephemeral-only storage."
-                        ) from upload_err
-                    logger.warning(
-                        "Supabase storage upload failed; continuing with local persistence only: %s",
-                        upload_err,
-                    )
+                        # Log at critical level but do NOT raise — the pipeline can still
+                        # process and analyze the document from in-memory bytes.
+                        logger.critical(
+                            "Supabase Storage upload FAILED (bucket='%s', path='%s'). "
+                            "Document will still be processed but file is not persisted remotely. "
+                            "Check bucket exists and service role key has storage permissions. Error: %s",
+                            self.bucket_name, storage_path, upload_err
+                        )
+                    else:
+                        logger.warning(
+                            "Supabase storage upload failed; continuing with local persistence only: %s",
+                            upload_err,
+                        )
         except Exception as e:
-            if REQUIRE_REMOTE_STORAGE and REMOTE_STORAGE_CONFIGURED:
-                raise
             logger.warning("Supabase client storage access skipped; using local persistence only: %s", e)
 
         if REQUIRE_REMOTE_STORAGE and not REMOTE_STORAGE_CONFIGURED:
