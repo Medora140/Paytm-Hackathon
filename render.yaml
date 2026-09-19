@@ -1,0 +1,34 @@
+# =====================================================================
+# Render Infrastructure Blueprint (render.yaml)
+# Docs: https://render.com/docs/blueprint-spec
+# =====================================================================
+
+services:
+  - type: web
+    name: money-docs-decoded-api
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        value: "http://localhost:3000,http://127.0.0.1:3000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: "gemini-1.5-flash"
+      - key: DEMO_MODE
+        value: "false"

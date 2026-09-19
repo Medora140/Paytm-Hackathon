@@ -17,13 +17,14 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Setup CORS for frontend Next.js application
+# Setup CORS for frontend Next.js application (supports localhost, custom domains, and all *.vercel.app preview/production deployments)
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if origins else ["*"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -134,5 +135,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     host = os.getenv("BACKEND_HOST", "0.0.0.0")
-    port = int(os.getenv("BACKEND_PORT", 8000))
+    port = int(os.getenv("PORT", os.getenv("BACKEND_PORT", 8000)))
     uvicorn.run("app.main:app", host=host, port=port, reload=True)

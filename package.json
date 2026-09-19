@@ -1,4 +1,11 @@
 {
+  "name": "money-docs-decoded-root",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "dev": "npm --prefix frontend run dev"
+  },
   "dependencies": {
     "@supabase/server": "^1.7.0",
     "@supabase/ssr": "^0.12.7",
