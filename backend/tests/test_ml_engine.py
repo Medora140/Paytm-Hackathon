@@ -261,7 +261,7 @@ def test_wired_api_endpoints():
     }
 
     client = TestClient(app)
-    doc_id = "test_mf_doc_01"
+    doc_id = "00000000-0000-4000-8000-000000000099"
     repository.create_document(
         doc_id=doc_id,
         user_id=user_id,

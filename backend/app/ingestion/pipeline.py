@@ -130,6 +130,7 @@ class IngestionPipeline:
                 document_type=document_type,
                 storage_path=storage_path
             )
+            self.repository.clear_chunks(doc_id)
 
             # Stage 2 & 3: Detect and Extract
             logger.info("[%s] Stage 2 & 3: Extracting text (native / OCR)...", doc_id)

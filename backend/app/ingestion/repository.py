@@ -76,8 +76,9 @@ class DocumentRepository:
             if existing.get("issuer_name") and not issuer_name:
                 doc_data["issuer_name"] = existing.get("issuer_name")
 
-        # Save to memory cache
+        # Save to memory cache and clear stale chunks
         self._documents[doc_id] = doc_data
+        self._chunks.pop(doc_id, None)
 
         persist_error = self._persist_document_upsert(doc_data)
         if persist_error and not allow_in_memory_stores():
@@ -274,6 +275,13 @@ class DocumentRepository:
 
         return True
 
+    def clear_chunks(self, doc_id: str) -> None:
+        """
+        Clears in-memory chunks for doc_id so reprocessing or resuming
+        never mixes old chunks with newly extracted ones.
+        """
+        self._chunks.pop(doc_id, None)
+
     def save_chunks(self, doc_id: str, chunks: List[Dict[str, Any]]) -> int:
         """
         Saves document chunks with embeddings into document_chunks table / memory.
@@ -283,6 +291,7 @@ class DocumentRepository:
 
         for c in chunks:
             chunk_id = c.get("id") or str(uuid.uuid4())
+            c["id"] = chunk_id
             rec = {
                 "id": chunk_id,
                 "document_id": doc_id,

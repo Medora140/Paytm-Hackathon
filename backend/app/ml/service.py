@@ -203,9 +203,9 @@ class MLService:
             else self._derive_benchmark_penalty(document_id)
         )
 
-        # 3. Detect or retrieve flags
-        doc_chunks = chunks or get_chunks_for_document(document_id)
-        flags = self.detector.detect_red_flags(document_id, doc_chunks)
+        # 3. Retrieve or detect red flags (guaranteeing consistent, deduplicated flags are scored)
+        red_flags_resp = self.get_red_flags(document_id, chunks=chunks)
+        flags = red_flags_resp.red_flags
 
         # 4. Calculate score with itemized breakdown
         score = calculate_confidence_score(

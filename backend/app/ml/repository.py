@@ -173,6 +173,19 @@ class MLRepository:
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
                 res = db.table("red_flags").select("*").eq("document_id", document_id).execute()
                 if hasattr(res, "data") and res.data:
+                    chunks_by_id = {}
+                    try:
+                        c_res = (
+                            db.table("document_chunks")
+                            .select("id, page_number, clause_label, text")
+                            .eq("document_id", document_id)
+                            .execute()
+                        )
+                        if hasattr(c_res, "data") and c_res.data:
+                            chunks_by_id = {str(c["id"]): c for c in c_res.data}
+                    except Exception as c_err:
+                        logger.debug("Could not pre-fetch chunks for red flag enrichment: %s", c_err)
+
                     items = []
                     for row in res.data:
                         severity_val = row.get("severity", "medium")
@@ -180,15 +193,23 @@ class MLRepository:
                             sev = SeverityLevel(severity_val)
                         except Exception:
                             sev = SeverityLevel.MEDIUM
+
+                        chk_id = str(row.get("chunk_id")) if row.get("chunk_id") else None
+                        chunk_meta = chunks_by_id.get(chk_id) if chk_id else None
+
+                        page_num = chunk_meta["page_number"] if chunk_meta else int(row.get("page_number") or 1)
+                        clause_lbl = chunk_meta["clause_label"] if chunk_meta else (row.get("clause_label") or None)
+                        src_txt = chunk_meta["text"] if chunk_meta else (row.get("plain_explanation") or "")
+
                         items.append(
                             RedFlagItem(
                                 id=str(row.get("id")),
                                 document_id=str(row.get("document_id")),
                                 pattern_id=str(row.get("pattern_id")) if row.get("pattern_id") else None,
-                                chunk_id=str(row.get("chunk_id")) if row.get("chunk_id") else None,
-                                page_number=int(row.get("page_number") or 1),
-                                clause_label=row.get("clause_label") or None,
-                                source_text=row.get("plain_explanation") or "",
+                                chunk_id=chk_id,
+                                page_number=page_num,
+                                clause_label=clause_lbl,
+                                source_text=src_txt,
                                 severity=sev,
                                 plain_explanation=row.get("plain_explanation") or "",
                                 confirmed_by_llm=bool(row.get("confirmed_by_llm", True)),
@@ -216,10 +237,24 @@ class MLRepository:
         """
         Persists detected red flags into the red_flags Supabase table.
         """
-        self._red_flags[document_id] = [f.model_dump() for f in flags]
-
         if not flags:
+            self._red_flags[document_id] = []
             return flags
+
+        # Deduplicate flags by (pattern_id, source_text) and (plain_explanation, source_text)
+        deduped: List[RedFlagItem] = []
+        seen_keys = set()
+        for f in flags:
+            src = (f.source_text or "").strip()
+            k1 = (f.pattern_id or "", src)
+            k2 = (f.plain_explanation or "", src)
+            if k1 not in seen_keys and k2 not in seen_keys:
+                seen_keys.add(k1)
+                seen_keys.add(k2)
+                deduped.append(f)
+        flags = deduped
+
+        self._red_flags[document_id] = [f.model_dump() for f in flags]
 
         supabase_rows = []
         for f in flags:

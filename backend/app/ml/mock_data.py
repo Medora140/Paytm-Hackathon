@@ -115,82 +115,83 @@ MOCK_HEALTH_INSURANCE_CHUNKS: List[Dict[str, Any]] = [
 
 def get_chunks_for_document(document_id: str) -> List[Dict[str, Any]]:
     """
-    Retrieves document chunks from the ingestion repository, then Supabase.
-    Does not serve mock fixtures — missing chunks are a hard error.
+    Retrieves document chunks directly from the live Supabase document_chunks table.
+    The in-memory repository cache is never preferred and is only consulted as a
+    last-resort fallback in degraded mode (e.g. unit testing with stub clients).
     """
-    # 1. Check repository cache first
-    try:
-        from app.ingestion.repository import repository
-        repo_chunks = repository.get_chunks(document_id)
-        if repo_chunks and len(repo_chunks) > 0:
-            logger.info(
-                "Loaded %s real extracted chunks from Ingestion Repository for doc '%s'.",
-                len(repo_chunks),
-                document_id,
-            )
-            return repo_chunks
-    except Exception as e:
-        logger.warning(
-            "\n" + "=" * 68 + "\n"
-            "[FALLBACK WARNING] [mock_data] Ingestion repository check failed for doc '%s'!\n"
-            "Reason: %s: %s\n"
-            "Action: Proceeding to check database storage.\n"
-            + "=" * 68,
-            document_id,
-            type(e).__name__,
-            e
-        )
+    from app.runtime_flags import allow_in_memory_stores
+    from app.validation import is_valid_uuid
 
-    # 2. Check Supabase DB
+    if not is_valid_uuid(document_id):
+        reason = f"Document ID '{document_id}' is not a valid UUID"
+        if allow_in_memory_stores():
+            try:
+                from app.ingestion.repository import repository
+                repo_chunks = repository._chunks.get(document_id)
+                if repo_chunks and len(repo_chunks) > 0:
+                    logger.warning(
+                        "\n" + "=" * 68 + "\n"
+                        "[DEGRADED MODE] [mock_data] Non-UUID document ID '%s' resolved via in-memory repository chunks (%d chunks).\n"
+                        + "=" * 68,
+                        document_id,
+                        len(repo_chunks)
+                    )
+                    return repo_chunks
+            except Exception:
+                pass
+        raise ChunksNotFoundError(document_id, reason)
+
+    # 1. Primary Source: Direct Supabase document_chunks query
     db = get_db()
-    if db is None:
-        reason = "Database client (db) is None"
-        logger.warning(
-            "\n" + "=" * 68 + "\n"
-            "[FALLBACK WARNING] [mock_data] Database client is None for doc '%s'!\n"
-            "Reason: %s\n"
-            + "=" * 68,
-            document_id,
-            reason
-        )
-        raise ChunksNotFoundError(document_id, reason)
-
-    if db.__class__.__name__ == "StubSupabaseClient":
-        reason = "Supabase client is a stub and no in-memory repository chunks exist for this document"
-        logger.warning(
-            "\n" + "=" * 68 + "\n"
-            "[FALLBACK WARNING] [mock_data] Stub database client in use without repository chunks for doc '%s'!\n"
-            "Reason: %s\n"
-            + "=" * 68,
-            document_id,
-            reason
-        )
-        raise ChunksNotFoundError(document_id, reason)
-
-    try:
-        res = db.table("document_chunks").select("*").eq("document_id", document_id).execute()
-        data = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else None)
-        if data and len(data) > 0:
-            logger.info(
-                "Loaded %s real document_chunks from Supabase for doc '%s'.",
-                len(data),
-                document_id,
+    if db is not None and db.__class__.__name__ != "StubSupabaseClient":
+        try:
+            res = (
+                db.table("document_chunks")
+                .select("*")
+                .eq("document_id", document_id)
+                .order("page_number")
+                .execute()
             )
-            chunks = []
-            for row in data:
-                chunks.append({
-                    "id": str(row.get("id")),
-                    "page_number": int(row.get("page_number", 1)),
-                    "clause_label": row.get("clause_label") or f"Clause (Page {row.get('page_number', 1)})",
-                    "text": row.get("text", "")
-                })
-            return chunks
-        reason = f"Supabase document_chunks query succeeded but returned 0 rows for doc '{document_id}'"
-    except ChunksNotFoundError:
-        raise
-    except Exception as e:
-        reason = f"Supabase query failed with exception: {type(e).__name__}: {e}"
+            data = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else None)
+            if data and len(data) > 0:
+                logger.info(
+                    "Loaded %s real document_chunks from Supabase for doc '%s'.",
+                    len(data),
+                    document_id,
+                )
+                chunks = []
+                for row in data:
+                    chunks.append({
+                        "id": str(row.get("id")),
+                        "document_id": document_id,
+                        "page_number": int(row.get("page_number", 1)),
+                        "clause_label": row.get("clause_label") or f"Clause (Page {row.get('page_number', 1)})",
+                        "text": row.get("text", ""),
+                        "embedding": row.get("embedding")
+                    })
+                return chunks
+        except Exception as e:
+            logger.error("Supabase document_chunks query failed for doc '%s': %s", document_id, e)
 
+    # 2. Last-resort fallback: only if in-memory stores are explicitly permitted
+    if allow_in_memory_stores():
+        try:
+            from app.ingestion.repository import repository
+            repo_chunks = repository._chunks.get(document_id)
+            if repo_chunks and len(repo_chunks) > 0:
+                logger.warning(
+                    "\n" + "=" * 68 + "\n"
+                    "[DEGRADED MODE] [mock_data] Supabase query returned 0 chunks or is unavailable for doc '%s'!\n"
+                    "Action: Falling back to in-memory ingestion repository cache (%d chunks).\n"
+                    + "=" * 68,
+                    document_id,
+                    len(repo_chunks)
+                )
+                return repo_chunks
+        except Exception as e:
+            logger.warning("In-memory repository fallback failed for doc '%s': %s", document_id, e)
+
+    reason = f"No document_chunks found in Supabase for document '{document_id}'"
     logger.warning(
         "\n" + "=" * 68 + "\n"
         "[FALLBACK WARNING] [mock_data] Chunks could not be found for doc '%s'!\n"

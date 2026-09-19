@@ -91,6 +91,24 @@ def calculate_confidence_score(
     raw_score = base_points - total_deductions + transparency_bonus
     clamped_score = max(0, min(100, raw_score))
 
+    # 6. Reconcile breakdown items to guarantee sum(points) == clamped_score
+    clamp_adjustment = clamped_score - raw_score
+    if clamp_adjustment != 0:
+        if raw_score < 0:
+            breakdown.append(
+                ScoreBreakdownItem(
+                    reason="Score floor adjustment: Clamped to minimum transparency threshold of 0",
+                    points=clamp_adjustment
+                )
+            )
+        elif raw_score > 100:
+            breakdown.append(
+                ScoreBreakdownItem(
+                    reason="Score ceiling adjustment: Clamped to maximum transparency score of 100",
+                    points=clamp_adjustment
+                )
+            )
+
     return ConfidenceScoreResponse(
         id=f"cs_{uuid.uuid4().hex[:12]}",
         document_id=document_id,
