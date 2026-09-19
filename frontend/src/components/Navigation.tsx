@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileText, ChevronDown, Globe, ShieldAlert, ArrowUpRight } from "lucide-react";
+import { FileText, ChevronDown, Globe, ShieldAlert, ArrowUpRight, LogOut, User } from "lucide-react";
 import { MOCK_DOCUMENTS_LIST } from "../lib/mockData";
+import { supabase } from "../lib/supabaseClient";
 
 export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const [docDropdownOpen, setDocDropdownOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState<"en" | "hi">("en");
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Extract active doc ID from URL if present
   const docIdMatch = pathname?.match(/\/doc\/([^/]+)/);
@@ -21,7 +23,27 @@ export default function Navigation() {
     if (saved === "hi" || saved === "en") {
       setCurrentLang(saved);
     }
+
+    // Check current Supabase auth session
+    supabase.auth.getSession().then(({ data }) => {
+      setCurrentUser(data.session?.user || null);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user || null);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    router.push("/login");
+    router.refresh();
+  };
 
   const handleLanguageChange = (lang: "en" | "hi") => {
     setCurrentLang(lang);
@@ -152,6 +174,39 @@ export default function Navigation() {
               हिंदी
             </button>
           </div>
+
+          {/* User Auth Section */}
+          {currentUser ? (
+            <div className="flex items-center gap-2">
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-canvas-soft border border-ink/10 text-xs font-semibold text-ink">
+                <User className="w-3.5 h-3.5 text-primary-deep" />
+                <span className="max-w-[120px] truncate">{currentUser.email}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-2xl border border-negative/20 text-negative-deep hover:bg-negative-soft transition-colors"
+                title="Log Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Log Out</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <Link
+                href="/login"
+                className="px-3 py-1.5 text-body hover:text-ink transition-colors"
+              >
+                Log In
+              </Link>
+              <Link
+                href="/signup"
+                className="px-3 py-1.5 rounded-2xl bg-primary hover:bg-primary-active text-ink transition-all shadow-xs"
+              >
+                Sign Up
+              </Link>
+            </div>
+          )}
 
           {/* Upload CTA pill */}
           <Link

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
@@ -46,7 +46,7 @@ class ScrapeJobStatus(str, Enum):
 # =====================================================================
 
 class SessionRequest(BaseModel):
-    access_token: str = Field(..., description="Supabase or Clerk JWT access token")
+    access_token: str = Field(..., description="Supabase JWT access token")
     refresh_token: Optional[str] = Field(None, description="Optional refresh token")
 
 
@@ -57,6 +57,25 @@ class SessionResponse(BaseModel):
     preferred_language: str = "en"
     is_active: bool = True
     session_token: Optional[str] = None
+
+
+class AuthSignUpRequest(BaseModel):
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=6, description="User password (min 6 characters)")
+
+
+class AuthLoginRequest(BaseModel):
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
+
+class AuthResponse(BaseModel):
+    user_id: str
+    email: str
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+    plan_tier: PlanTier = PlanTier.FREE
 
 
 # =====================================================================
@@ -121,6 +140,7 @@ class DocumentSummaryResponse(BaseModel):
     waiting_periods: List[str] = Field(default_factory=list, description="Specific waiting intervals before coverage applies")
     notable_terms: List[str] = Field(default_factory=list, description="Other critical fine-print terms")
     model_version: str
+    is_fallback: bool = False
     generated_at: datetime
 
 
@@ -177,6 +197,7 @@ class ChatResponse(BaseModel):
     content: str
     cited_chunk_ids: List[str] = Field(default_factory=list)
     citations: List[CitationItem] = Field(default_factory=list)
+    is_fallback: bool = False
     created_at: datetime
 
 

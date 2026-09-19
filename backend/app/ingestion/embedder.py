@@ -1,71 +1,77 @@
-import hashlib
-import math
-from typing import Any, Dict, List
 import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_DIMENSION = 384
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EXPECTED_EMBEDDING_DIMENSION = 384
+
+# Global cached model instance to ensure model is loaded only once
+_sentence_transformer_model = None
+
+
+def get_embedding_model():
+    """
+    Returns the singleton SentenceTransformer instance.
+    Loads the model once and reuses it across all requests and documents.
+    """
+    global _sentence_transformer_model
+    if _sentence_transformer_model is None:
+        logger.info("Loading local SentenceTransformer model '%s'...", EMBEDDING_MODEL_NAME)
+        from sentence_transformers import SentenceTransformer
+        _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        logger.info("SentenceTransformer model '%s' loaded successfully.", EMBEDDING_MODEL_NAME)
+    return _sentence_transformer_model
 
 
 class ChunkEmbedder:
     """
-    Computes vector embeddings for document chunks.
-    Matches schema embedding vector(384).
-    Uses ChromaDB DefaultEmbeddingFunction (all-MiniLM-L6-v2 via ONNX) with resilient fallback.
+    Computes real vector embeddings for document chunks using a local
+    SentenceTransformer model (sentence-transformers/all-MiniLM-L6-v2).
+    Generates exact 384-dimensional float vectors matching the
+    PostgreSQL/pgvector schema: document_chunks.embedding vector(384).
     """
 
     def __init__(self, batch_size: int = 32):
         self.batch_size = batch_size
-        self._embed_fn = None
-        self._init_embedding_function()
-
-    def _init_embedding_function(self):
-        try:
-            from chromadb.utils import embedding_functions
-            self._embed_fn = embedding_functions.DefaultEmbeddingFunction()
-        except Exception as e:
-            logger.warning("Could not initialize ChromaDB embedding function: %s", e)
-            self._embed_fn = None
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
         Embeds a list of strings into 384-dimensional float vectors.
+        Generates real embeddings from actual chunk text.
+        Never generates fake, synthetic, or hash-based vectors.
         """
         if not texts:
             return []
 
+        model = get_embedding_model()
         all_embeddings: List[List[float]] = []
 
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
-            batch_embeddings = []
-
-            if self._embed_fn is not None:
-                try:
-                    raw_res = self._embed_fn(batch)
-                    for item in raw_res:
-                        vec = [float(x) for x in item]
-                        # Ensure dimension matches 384
-                        if len(vec) == EMBEDDING_DIMENSION:
-                            batch_embeddings.append(vec)
-                        elif len(vec) > EMBEDDING_DIMENSION:
-                            batch_embeddings.append(vec[:EMBEDDING_DIMENSION])
-                        else:
-                            batch_embeddings.append(vec + [0.0] * (EMBEDDING_DIMENSION - len(vec)))
-                except Exception as e:
-                    logger.warning("Embedding function call failed for batch: %s. Using fallback vector generator.", e)
-                    batch_embeddings = [self._fallback_embedding(t) for t in batch]
-            else:
-                batch_embeddings = [self._fallback_embedding(t) for t in batch]
-
-            all_embeddings.extend(batch_embeddings)
+            # normalize_embeddings=True produces unit vectors for cosine similarity
+            vectors = model.encode(batch, convert_to_numpy=True, normalize_embeddings=True)
+            for vec in vectors:
+                vec_list = [float(x) for x in vec]
+                if len(vec_list) != EXPECTED_EMBEDDING_DIMENSION:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: expected {EXPECTED_EMBEDDING_DIMENSION}, "
+                        f"got {len(vec_list)} from model {EMBEDDING_MODEL_NAME}"
+                    )
+                all_embeddings.append(vec_list)
 
         return all_embeddings
 
+    def embed_query(self, query: str) -> List[float]:
+        """
+        Embeds a single query string for semantic pgvector similarity search.
+        """
+        results = self.embed_texts([query])
+        return results[0] if results else []
+
     def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Adds 384-dimensional 'embedding' key to each chunk dictionary.
+        Generates real 384-dimensional embeddings and adds 'embedding' key to each chunk.
         """
         texts = [c.get("text", "") for c in chunks]
         embeddings = self.embed_texts(texts)
@@ -75,18 +81,10 @@ class ChunkEmbedder:
 
         return chunks
 
-    def _fallback_embedding(self, text: str) -> List[float]:
-        """
-        Deterministic pseudo-embedding generating normalized 384-dim vector
-        used as fallback if external model runtime is unavailable.
-        """
-        vec = []
-        # Use multiple hash seeds to project onto 384 dimensions
-        for i in range(EMBEDDING_DIMENSION):
-            h = hashlib.sha256(f"{text}_{i}".encode("utf-8")).digest()
-            val = (int.from_bytes(h[:4], "big") / (2**32 - 1)) * 2.0 - 1.0
-            vec.append(val)
 
-        # Normalize to unit length
-        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-        return [round(x / norm, 6) for x in vec]
+# Global default embedder instance
+default_embedder = ChunkEmbedder()
+
+
+def get_embedder() -> ChunkEmbedder:
+    return default_embedder

@@ -31,17 +31,21 @@ OUT_OF_SCOPE_TOPICS = [
 ]
 
 
-def _lexical_similarity(query: str, text: str) -> float:
+import numpy as np
+from app.ingestion.embedder import get_embedder
+
+
+def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
     """
-    Computes a normalized keyword overlap score between query and chunk text.
+    Calculates cosine similarity between two 384-dimensional vectors.
     """
-    stop_words = {"the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "is", "are", "what", "how", "why", "when", "does", "do", "i", "my"}
-    query_tokens = set(re.findall(r"\b\w{3,}\b", query.lower())) - stop_words
-    if not query_tokens:
+    a = np.array(vec_a, dtype=np.float32)
+    b = np.array(vec_b, dtype=np.float32)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
         return 0.0
-    text_lower = text.lower()
-    matches = sum(1 for token in query_tokens if token in text_lower)
-    return matches / len(query_tokens)
+    return float(np.dot(a, b) / (norm_a * norm_b))
 
 
 class GroundedRAGChat:
@@ -49,6 +53,7 @@ class GroundedRAGChat:
     Grounded RAG Conversational Engine adhering strictly to §4 guardrails:
     - Answers only from retrieved chunks
     - Rejects questions unsupported by the provided document chunks
+    - Performs pgvector semantic similarity search over document chunks
     - Cites page numbers and exact quotes
     """
 
@@ -59,8 +64,6 @@ class GroundedRAGChat:
         """Returns the cached verified Gemini client instance, or None if unavailable."""
         return get_gemini_client(api_key=self.api_key)
 
-
-
     def retrieve_relevant_chunks(
         self,
         query: str,
@@ -68,19 +71,40 @@ class GroundedRAGChat:
         top_k: int = 3
     ) -> List[Tuple[Dict[str, Any], float]]:
         """
-        Retrieves the top-k most relevant chunks using lexical similarity.
+        Retrieves top-k most relevant chunks using real vector similarity search.
+        Embeds query with sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+        and scores chunks via cosine similarity against pgvector embeddings.
         """
+        if not chunks:
+            return []
+
+        embedder = get_embedder()
+        query_vec = embedder.embed_query(query)
+        if not query_vec:
+            return []
+
+        # If any chunks lack an embedding, compute it via SentenceTransformer
+        chunks_to_embed = [c for c in chunks if not c.get("embedding")]
+        if chunks_to_embed:
+            texts = [c.get("text", "") for c in chunks_to_embed]
+            computed = embedder.embed_texts(texts)
+            for c, emb in zip(chunks_to_embed, computed):
+                c["embedding"] = emb
+
         scored_chunks = []
         for chunk in chunks:
-            text = chunk.get("text", "")
-            score = _lexical_similarity(query, text)
-            # Boost if query matches clause label
-            label = chunk.get("clause_label", "")
-            if label and _lexical_similarity(query, label) > 0.3:
-                score += 0.3
-            scored_chunks.append((chunk, score))
+            raw_emb = chunk.get("embedding")
+            if isinstance(raw_emb, str):
+                try:
+                    chunk_vec = json.loads(raw_emb)
+                except Exception:
+                    chunk_vec = [float(x) for x in raw_emb.strip("[]").split(",") if x.strip()]
+            else:
+                chunk_vec = raw_emb
 
-        # Sort descending by score
+            sim = _cosine_similarity(query_vec, chunk_vec)
+            scored_chunks.append((chunk, sim))
+
         scored_chunks.sort(key=lambda x: x[1], reverse=True)
         return scored_chunks[:top_k]
 
@@ -296,5 +320,6 @@ USER QUESTION:
                     quote=quote_text
                 )
             ],
+            is_fallback=True,
             created_at=datetime.utcnow()
         )

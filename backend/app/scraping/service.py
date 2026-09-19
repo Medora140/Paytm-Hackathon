@@ -145,7 +145,14 @@ class BenchmarkService:
         for r in matched_records:
             scraped_dt = r.get("last_scraped_at")
             if isinstance(scraped_dt, str):
-                scraped_dt = datetime.fromisoformat(scraped_dt)
+                try:
+                    from dateutil.parser import isoparse
+                    scraped_dt = isoparse(scraped_dt)
+                except Exception:
+                    try:
+                        scraped_dt = datetime.fromisoformat(scraped_dt)
+                    except Exception:
+                        scraped_dt = datetime.utcnow()
             elif not isinstance(scraped_dt, datetime):
                 scraped_dt = datetime.utcnow()
 

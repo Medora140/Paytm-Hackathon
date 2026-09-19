@@ -1,0 +1,536 @@
+{
+  "name": "scrape-benchmarks",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "node-001",
+      "name": "Weekly Cron Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "notes": "Fires every week. Triggers the full benchmark scrape pipeline."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verified hub URLs (HTTP 200, tested 2026-09-18). See scraper/seed_urls.py\nconst seeds = [\n  { issuer_name: 'AMFI India (Regulatory)', product_category: 'mutual_fund', source_url: 'https://portal.amfiindia.com', page_type: 'regulatory_hub', verified_status: 200 },\n  { issuer_name: 'AMFI India (Regulatory)', product_category: 'mutual_fund', source_url: 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0', page_type: 'regulatory_data', verified_status: 200 },\n  { issuer_name: 'ICICI Prudential Mutual Fund', product_category: 'mutual_fund', source_url: 'https://www.icicipruamc.com/downloads', page_type: 'amc_downloads_hub', verified_status: 200 },\n  { issuer_name: 'Mirae Asset Mutual Fund', product_category: 'mutual_fund', source_url: 'https://www.miraeassetmf.co.in/downloads/factsheet', page_type: 'amc_factsheet_hub', verified_status: 200 },\n  { issuer_name: 'PPFAS Mutual Fund', product_category: 'mutual_fund', source_url: 'https://amc.ppfas.com/schemes/parag-parikh-flexi-cap-fund/', page_type: 'amc_scheme_hub', verified_status: 200 },\n  { issuer_name: 'Nippon India Mutual Fund', product_category: 'mutual_fund', source_url: 'https://mf.nipponindiaim.com/investor-services/downloads', page_type: 'amc_downloads_hub', verified_status: 200 },\n  { issuer_name: 'UTI Mutual Fund', product_category: 'mutual_fund', source_url: 'https://www.utimf.com/downloads/factsheets', page_type: 'amc_factsheet_hub', verified_status: 200 }\n];\nreturn seeds.map(s => ({ json: s }));"
+      },
+      "id": "node-002",
+      "name": "Load Seed Hub URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "notes": "Emits one item per verified hub URL. Source of truth: scraper/seed_urls.py"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "node-003",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Process one hub URL at a time for per-source error isolation."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.source_url }}",
+        "authentication": "none",
+        "method": "GET",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,*/*"
+            }
+          ]
+        }
+      },
+      "id": "node-004",
+      "name": "HTTP Request - Fetch Hub Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Fetches hub page HTML. timeout=10s, follows redirects. Error output routes to failure logger."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-005",
+      "name": "Status 200 Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "notes": "Only proceeds to HTML extraction on HTTP 200. Non-200 routes to failure logger."
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "dataPropertyName": "body",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "pdf_links",
+              "cssSelector": "a[href$='.pdf'], a[href*='.pdf?']",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "page_title",
+              "cssSelector": "title",
+              "returnArray": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-006",
+      "name": "HTML Extract - Find PDF Links",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        200
+      ],
+      "notes": "CSS selector: a[href$='.pdf'] extracts all anchor tags whose href ends in .pdf. Returns array of PDF URLs."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten, deduplicate, and resolve relative PDF URLs.\nconst items = $input.all();\nconst results = [];\nfor (const item of items) {\n  const baseUrl = item.json.source_url || '';\n  const rawLinks = item.json.pdf_links || [];\n  const seen = new Set();\n  for (const link of rawLinks) {\n    if (!link || seen.has(link)) continue;\n    seen.add(link);\n    let absoluteUrl = link;\n    if (link.startsWith('/')) {\n      try { const base = new URL(baseUrl); absoluteUrl = base.origin + link; } catch(_) {}\n    } else if (!link.startsWith('http')) { continue; }\n    results.push({ json: { pdf_url: absoluteUrl, issuer_name: item.json.issuer_name, product_category: item.json.product_category, page_type: item.json.page_type, source_hub_url: baseUrl, discovered_at: new Date().toISOString() } });\n  }\n}\nreturn results.length > 0 ? results : [{ json: { pdf_url: null, issuer_name: 'NO_PDFS_FOUND', source_hub_url: items[0]?.json?.source_url || '' } }];"
+      },
+      "id": "node-007",
+      "name": "Normalize PDF URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ],
+      "notes": "Deduplicates links, resolves relative paths to absolute URLs. Emits one item per PDF URL."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.pdf_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.pdf_url }}",
+              "rightValue": "null",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-008",
+      "name": "Filter Valid PDF URLs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        200
+      ],
+      "notes": "Skips null/empty pdf_url items."
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/scrape",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "pdf_url": "={{ $json.pdf_url }}",
+          "issuer_name": "={{ $json.issuer_name }}",
+          "product_category": "={{ $json.product_category }}",
+          "source_hub_url": "={{ $json.source_hub_url }}",
+          "discovered_at": "={{ $json.discovered_at }}"
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "node-009",
+      "name": "POST to Scraper Microservice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        120
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "POSTs PDF URL to Python scraper microservice (localhost:8001/scrape). Microservice handles robots.txt, PDF parsing, and benchmark_products DB writes. n8n orchestrates; Python does heavy parsing."
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/webhooks/n8n/scrape-complete",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "status": "success",
+          "pdf_url": "={{ $json.pdf_url }}",
+          "issuer_name": "={{ $json.issuer_name }}",
+          "scraped_at": "={{ $now }}"
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-010",
+      "name": "Notify Backend - Scrape Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        120
+      ],
+      "notes": "POST /webhooks/n8n/scrape-complete — backend invalidates stale compare-page caches. Per docs/n8n.md step 5."
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/webhooks/n8n/scrape-job-log",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "status": "failure",
+          "source_url": "={{ $json.source_url }}",
+          "issuer_name": "={{ $json.issuer_name }}",
+          "error": "={{ $json.error?.message || 'HTTP non-200 or network error' }}",
+          "http_status": "={{ $json.statusCode || 'N/A' }}",
+          "failed_at": "={{ $now }}"
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-011",
+      "name": "Log Failure to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        460
+      ],
+      "notes": "Logs per-source failures to backend scrape_jobs table. Does NOT abort the whole batch."
+    },
+    {
+      "parameters": {
+        "jsCode": "const failureCount = $input.all().length;\nconst THRESHOLD = 3;\nif (failureCount >= THRESHOLD) {\n  return [{ json: { alert: true, message: `Scrape job: ${failureCount} sources failed.`, failure_count: failureCount, threshold: THRESHOLD, alerted_at: new Date().toISOString() } }];\n}\nreturn [{ json: { alert: false, failure_count: failureCount } }];"
+      },
+      "id": "node-012",
+      "name": "Check Failure Threshold",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        460
+      ],
+      "notes": "Triggers alert if >= 3 sources fail. Per spec: 'if failures exceed a threshold, send a Slack/email alert'."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "node-013",
+      "name": "Alert Threshold Exceeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#ops-alerts",
+        "text": "=:warning: *Money Docs Decoded - Scrape Job Alert*\n{{ $json.message }}\nFailed: {{ $json.failure_count }} sources\nTime: {{ $json.alerted_at }}",
+        "otherOptions": {}
+      },
+      "id": "node-014",
+      "name": "Slack Alert - High Failure Rate",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        460
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-cred-id",
+          "name": "Slack API"
+        }
+      },
+      "notes": "Replace #ops-alerts and credentials before deploying."
+    }
+  ],
+  "connections": {
+    "Weekly Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Seed Hub URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Seed Hub URLs": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Fetch Hub Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Fetch Hub Page": {
+      "main": [
+        [
+          {
+            "node": "Status 200 Gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Failure to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status 200 Gate": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract - Find PDF Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Failure to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract - Find PDF Links": {
+      "main": [
+        [
+          {
+            "node": "Normalize PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize PDF URLs": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid PDF URLs": {
+      "main": [
+        [
+          {
+            "node": "POST to Scraper Microservice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Scraper Microservice": {
+      "main": [
+        [
+          {
+            "node": "Notify Backend - Scrape Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Failure to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Failure to Backend": {
+      "main": [
+        [
+          {
+            "node": "Check Failure Threshold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Failure Threshold": {
+      "main": [
+        [
+          {
+            "node": "Alert Threshold Exceeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Threshold Exceeded": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert - High Failure Rate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "tag-scraping",
+      "name": "scraping"
+    },
+    {
+      "id": "tag-benchmarks",
+      "name": "benchmarks"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "money-docs-decoded",
+    "notes": "Workflow created 2026-09-18. Matches spec in docs/n8n.md (scrape-benchmarks). Pipeline: Weekly Cron -> Load Seed Hub URLs -> Split In Batches -> HTTP Request (fetch hub) -> Status 200 Gate -> HTML Extract (find PDFs) -> Normalize PDF URLs -> Filter Valid -> POST to Scraper Microservice -> Notify Backend. Failures: Log -> Check Threshold -> Slack Alert. See scraper/seed_urls.py for verified URL list."
+  }
+}

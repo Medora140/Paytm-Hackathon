@@ -249,49 +249,67 @@ def test_wired_api_endpoints():
     """
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.auth import get_current_user
+    from app.schemas import DocumentType
     from app.ingestion.repository import repository
     from app.ml.mock_data import SYNTHETIC_MUTUAL_FUND_CHUNKS
-    
+
+    user_id = "00000000-0000-4000-8000-000000000001"
+    app.dependency_overrides[get_current_user] = lambda: {
+        "id": user_id,
+        "email": "test@moneydocs.internal",
+    }
+
     client = TestClient(app)
     doc_id = "test_mf_doc_01"
+    repository.create_document(
+        doc_id=doc_id,
+        user_id=user_id,
+        filename="test_mf.pdf",
+        document_type=DocumentType.MUTUAL_FUND,
+        storage_path=f"test/{doc_id}.pdf"
+    )
     repository.save_chunks(doc_id, SYNTHETIC_MUTUAL_FUND_CHUNKS)
-    
-    # Summary
-    sum_resp = client.get(f"/documents/{doc_id}/summary")
-    assert sum_resp.status_code == 200
-    sum_data = sum_resp.json()
-    assert sum_data["document_id"] == doc_id
-    assert "coverage" in sum_data
-    assert "exclusions" in sum_data
-    assert "key_fees" in sum_data
-    
-    # Red flags
-    rf_resp = client.get(f"/documents/{doc_id}/red-flags")
-    assert rf_resp.status_code == 200
-    rf_data = rf_resp.json()
-    assert rf_data["document_id"] == doc_id
-    assert rf_data["count"] >= 2
-    assert len(rf_data["red_flags"]) >= 2
-    
-    # Confidence score
-    cs_resp = client.get(f"/documents/{doc_id}/confidence-score")
-    assert cs_resp.status_code == 200
-    cs_data = cs_resp.json()
-    assert cs_data["document_id"] == doc_id
-    assert 0 <= cs_data["score"] <= 100
-    assert len(cs_data["breakdown"]) > 0
-    
-    # Chat grounded
-    chat_resp = client.post(f"/documents/{doc_id}/chat", json={"question": "What is the exit load?"})
-    assert chat_resp.status_code == 200
-    chat_data = chat_resp.json()
-    assert chat_data["document_id"] == doc_id
-    assert len(chat_data["citations"]) > 0
-    
-    # Chat out of scope refusal
-    refusal_resp = client.post(f"/documents/{doc_id}/chat", json={"question": "What is the capital of Australia?"})
-    assert refusal_resp.status_code == 200
-    refusal_data = refusal_resp.json()
-    assert "not found" in refusal_data["content"].lower()
-    assert len(refusal_data["citations"]) == 0
+
+    try:
+        # Summary
+        sum_resp = client.get(f"/documents/{doc_id}/summary")
+        assert sum_resp.status_code == 200
+        sum_data = sum_resp.json()
+        assert sum_data["document_id"] == doc_id
+        assert "coverage" in sum_data
+        assert "exclusions" in sum_data
+        assert "key_fees" in sum_data
+
+        # Red flags
+        rf_resp = client.get(f"/documents/{doc_id}/red-flags")
+        assert rf_resp.status_code == 200
+        rf_data = rf_resp.json()
+        assert rf_data["document_id"] == doc_id
+        assert rf_data["count"] >= 2
+        assert len(rf_data["red_flags"]) >= 2
+
+        # Confidence score
+        cs_resp = client.get(f"/documents/{doc_id}/confidence-score")
+        assert cs_resp.status_code == 200
+        cs_data = cs_resp.json()
+        assert cs_data["document_id"] == doc_id
+        assert 0 <= cs_data["score"] <= 100
+        assert len(cs_data["breakdown"]) > 0
+
+        # Chat grounded
+        chat_resp = client.post(f"/documents/{doc_id}/chat", json={"question": "What is the exit load?"})
+        assert chat_resp.status_code == 200
+        chat_data = chat_resp.json()
+        assert chat_data["document_id"] == doc_id
+        assert len(chat_data["citations"]) > 0
+
+        # Chat out of scope refusal
+        refusal_resp = client.post(f"/documents/{doc_id}/chat", json={"question": "What is the capital of Australia?"})
+        assert refusal_resp.status_code == 200
+        refusal_data = refusal_resp.json()
+        assert "not found" in refusal_data["content"].lower()
+        assert len(refusal_data["citations"]) == 0
+    finally:
+        app.dependency_overrides.clear()
 

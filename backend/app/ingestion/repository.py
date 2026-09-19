@@ -10,6 +10,21 @@ from app.schemas import DocumentStatus, DocumentType
 logger = logging.getLogger(__name__)
 
 
+def _parse_iso_timestamp(val: Any) -> datetime:
+    if not val:
+        return datetime.utcnow()
+    if isinstance(val, datetime):
+        return val
+    try:
+        from dateutil.parser import isoparse
+        return isoparse(str(val))
+    except Exception:
+        try:
+            return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        except Exception:
+            return datetime.utcnow()
+
+
 class DocumentRepository:
     """
     Repository layer for documents and document_chunks tables.
@@ -154,7 +169,7 @@ class DocumentRepository:
                         "status": DocumentStatus(item.get("status", "uploaded")),
                         "pipeline_stage": f"Status: {item.get('status')}",
                         "issuer_name": item.get("issuer_name"),
-                        "uploaded_at": datetime.fromisoformat(item["uploaded_at"]) if "uploaded_at" in item else datetime.utcnow(),
+                        "uploaded_at": _parse_iso_timestamp(item.get("uploaded_at")),
                         "deleted_at": None,
                         "confidence_score": None
                     }
@@ -197,7 +212,7 @@ class DocumentRepository:
                             "status": DocumentStatus(item.get("status", "uploaded")),
                             "pipeline_stage": f"Status: {item.get('status')}",
                             "issuer_name": item.get("issuer_name"),
-                            "uploaded_at": datetime.fromisoformat(item["uploaded_at"]) if "uploaded_at" in item else datetime.utcnow(),
+                            "uploaded_at": _parse_iso_timestamp(item.get("uploaded_at")),
                             "confidence_score": None
                         }
                         self._documents[d_id] = doc
@@ -318,9 +333,18 @@ class DocumentRepository:
             if not isinstance(db, StubSupabaseClient) and db.__class__.__name__ != "StubSupabaseClient":
                 res = db.table("document_chunks").select("*").eq("document_id", doc_id).order("page_number").execute()
                 if hasattr(res, "data") and res.data is not None:
+                    data = res.data
+                    for row in data:
+                        raw_emb = row.get("embedding")
+                        if isinstance(raw_emb, str):
+                            try:
+                                import json
+                                row["embedding"] = json.loads(raw_emb)
+                            except Exception:
+                                row["embedding"] = [float(x) for x in raw_emb.strip("[]").split(",") if x.strip()]
                     # Sync memory store as a reflection of Supabase DB
-                    self._chunks[doc_id] = res.data
-                    return res.data
+                    self._chunks[doc_id] = data
+                    return data
         except Exception as e:
             logger.error("Supabase document_chunks.select failed: %s", e)
             if not allow_in_memory_stores():

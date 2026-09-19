@@ -132,16 +132,32 @@ class IngestionPipeline:
             logger.info("[%s] Stage 6: Persisting %s embedded chunks...", doc_id, len(embedded_chunks))
             saved_count = self.repository.save_chunks(doc_id, embedded_chunks)
 
+            # Stage 7: Trigger ML Analysis (Red flags, Confidence score) -> ANALYZED
+            analysis_summary = f"Ingestion complete: {saved_count} clauses embedded and indexed"
+            final_status = DocumentStatus.EMBEDDED
+            try:
+                from app.ml.service import ml_service
+                logger.info("[%s] Stage 7: Triggering ML analysis...", doc_id)
+                flags_resp = ml_service.get_red_flags(doc_id, chunks=embedded_chunks)
+                conf_resp = ml_service.get_confidence_score(doc_id, chunks=embedded_chunks)
+                final_status = DocumentStatus.ANALYZED
+                analysis_summary = (
+                    f"Analysis complete: {flags_resp.count} red flags identified | "
+                    f"Fairness score {conf_resp.score}/100"
+                )
+            except Exception as ml_err:
+                logger.warning("[%s] ML analysis deferred or failed: %s", doc_id, ml_err)
+
             self.repository.update_status(
                 doc_id=doc_id,
-                status=DocumentStatus.EMBEDDED,
-                pipeline_stage=f"Ingestion complete: {saved_count} clauses embedded and indexed",
+                status=final_status,
+                pipeline_stage=analysis_summary,
                 issuer_name=issuer_name
             )
 
             return {
                 "document_id": doc_id,
-                "status": DocumentStatus.EMBEDDED,
+                "status": final_status,
                 "storage_path": storage_path,
                 "pages_count": len(pages_data),
                 "chunks_count": saved_count,

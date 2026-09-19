@@ -55,6 +55,7 @@ export interface DocumentSummaryResponse {
   waiting_periods: string[];
   notable_terms: string[];
   model_version: string;
+  is_fallback?: boolean;
   generated_at: string;
 }
 
@@ -115,6 +116,7 @@ export interface ChatResponse {
   content: string;
   cited_chunk_ids: string[];
   citations: CitationItem[];
+  is_fallback?: boolean;
   created_at: string;
 }
 

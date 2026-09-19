@@ -20,9 +20,26 @@ import {
   MOCK_SUMMARY,
   MOCK_SUMMARY_HI,
 } from "./mockData";
+import { supabase } from "./supabaseClient";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+async function getAuthHeaders(
+  extraHeaders: Record<string, string> = {}
+): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  } catch (e) {
+    console.warn("Could not retrieve Supabase session token:", e);
+  }
+  return headers;
+}
 
 export async function uploadDocument(
   file: File,
@@ -33,8 +50,10 @@ export async function uploadDocument(
     formData.append("file", file);
     formData.append("document_type", documentType);
 
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/documents`, {
       method: "POST",
+      headers,
       body: formData,
     });
 
@@ -43,7 +62,6 @@ export async function uploadDocument(
     }
     throw new Error(`Upload failed with status: ${res.status}`);
   } catch (err) {
-    // Resilient fallback when backend is in Wave 0 or during test execution
     console.warn("Backend unavailable, using stubbed upload response:", err);
     return {
       id: MOCK_DOCUMENT_ID,
@@ -58,7 +76,8 @@ export async function uploadDocument(
 
 export async function listDocuments(): Promise<DocumentListItem[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/documents`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/documents`, { headers });
     if (res.ok) {
       return await res.json();
     }
@@ -71,7 +90,8 @@ export async function listDocuments(): Promise<DocumentListItem[]> {
 
 export async function getDocument(id: string): Promise<DocumentDetailResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}`, { headers });
     if (res.ok) {
       return await res.json();
     }
@@ -85,10 +105,14 @@ export async function getDocument(id: string): Promise<DocumentDetailResponse> {
   }
 }
 
-export async function deleteDocument(id: string): Promise<{ status: string; message: string }> {
+export async function deleteDocument(
+  id: string
+): Promise<{ status: string; message: string }> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
       method: "DELETE",
+      headers,
     });
     if (res.ok) {
       return await res.json();
@@ -98,7 +122,8 @@ export async function deleteDocument(id: string): Promise<{ status: string; mess
     console.warn("Backend unavailable, using mock delete response:", err);
     return {
       status: "deleted",
-      message: "Document and associated data permanently deleted (DPDP right to erasure).",
+      message:
+        "Document and associated data permanently deleted (DPDP right to erasure).",
     };
   }
 }
@@ -108,8 +133,12 @@ export async function getSummary(
   language: string = "en"
 ): Promise<DocumentSummaryResponse> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(
-      `${API_BASE_URL}/documents/${id}/summary?language=${encodeURIComponent(language)}`
+      `${API_BASE_URL}/documents/${id}/summary?language=${encodeURIComponent(
+        language
+      )}`,
+      { headers }
     );
     if (res.ok) {
       return await res.json();
@@ -118,15 +147,18 @@ export async function getSummary(
   } catch (err) {
     console.warn("Backend unavailable, using mock summary:", err);
     if (language === "hi") {
-      return { ...MOCK_SUMMARY_HI, document_id: id };
+      return { ...MOCK_SUMMARY_HI, document_id: id, is_fallback: true };
     }
-    return { ...MOCK_SUMMARY, document_id: id };
+    return { ...MOCK_SUMMARY, document_id: id, is_fallback: true };
   }
 }
 
 export async function getRedFlags(id: string): Promise<RedFlagsResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}/red-flags`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/red-flags`, {
+      headers,
+    });
     if (res.ok) {
       return await res.json();
     }
@@ -141,7 +173,10 @@ export async function getConfidenceScore(
   id: string
 ): Promise<ConfidenceScoreResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}/confidence-score`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/confidence-score`, {
+      headers,
+    });
     if (res.ok) {
       return await res.json();
     }
@@ -158,11 +193,12 @@ export async function sendChatMessage(
   language: string = "en"
 ): Promise<ChatResponse> {
   try {
+    const headers = await getAuthHeaders({
+      "Content-Type": "application/json",
+    });
     const res = await fetch(`${API_BASE_URL}/documents/${id}/chat`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({ question, language }),
     });
     if (res.ok) {
@@ -172,15 +208,17 @@ export async function sendChatMessage(
   } catch (err) {
     console.warn("Backend unavailable, using mock chat response:", err);
     const lower = question.toLowerCase();
-    if (lower.includes("room") || lower.includes("rent")) {
-      return { ...MOCK_CHAT_ANSWERS.room_rent, document_id: id };
+    // Word-boundary safe pattern matching for mock demo fallback
+    if (/\b(?:room|rent)\b/i.test(lower)) {
+      return { ...MOCK_CHAT_ANSWERS.room_rent, document_id: id, is_fallback: true };
     }
-    if (lower.includes("pre-existing") || lower.includes("ped") || lower.includes("waiting")) {
-      return { ...MOCK_CHAT_ANSWERS.waiting_period, document_id: id };
+    if (/\b(?:pre-existing|ped|waiting\s*period)\b/i.test(lower)) {
+      return { ...MOCK_CHAT_ANSWERS.waiting_period, document_id: id, is_fallback: true };
     }
     return {
       ...MOCK_CHAT_ANSWERS.default,
       document_id: id,
+      is_fallback: true,
       content: `Regarding your query "${question}": According to your policy clauses, room rent is restricted to 1% per day (Clause 4.2, Page 14) and pre-existing conditions have a 36-month waiting period (Clause 9.1, Page 18).`,
     };
   }
@@ -190,7 +228,10 @@ export async function getBenchmarkComparison(
   id: string
 ): Promise<BenchmarkCompareResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/documents/${id}/compare`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/documents/${id}/compare`, {
+      headers,
+    });
     if (res.ok) {
       return await res.json();
     }
@@ -199,4 +240,4 @@ export async function getBenchmarkComparison(
     console.warn("Backend unavailable, using mock benchmark comparison:", err);
     return { ...MOCK_BENCHMARK_COMPARE, document_id: id };
   }
-}
+}

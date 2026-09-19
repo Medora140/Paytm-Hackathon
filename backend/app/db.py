@@ -1,9 +1,16 @@
-﻿import logging
+import logging
 import os
 from typing import Any, Optional
 from dotenv import load_dotenv
 from app.runtime_flags import allow_in_memory_stores
 
+# Multi-path .env loader to ensure environment variables are loaded regardless of cwd
+for _candidate_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), ".env"),
+]:
+    if os.path.exists(_candidate_path):
+        load_dotenv(_candidate_path)
 load_dotenv()
 
 logger = logging.getLogger("app.db")
@@ -60,9 +67,9 @@ class SupabaseConnectionHelper:
 
     def __init__(self):
         self._client: Optional[Any] = None
-        self.supabase_url: str = SUPABASE_URL
-        self.supabase_key: str = SUPABASE_KEY
-        self.database_url: str = DATABASE_URL
+        self.supabase_url: str = os.getenv("SUPABASE_URL", SUPABASE_URL)
+        self.supabase_key: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY", SUPABASE_KEY)
+        self.database_url: str = os.getenv("DATABASE_URL", DATABASE_URL)
 
     @property
     def is_configured(self) -> bool:
@@ -76,13 +83,16 @@ class SupabaseConnectionHelper:
         if self._client is not None:
             return self._client
 
-        if self.is_configured:
+        effective_url = os.getenv("SUPABASE_URL", self.supabase_url)
+        effective_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or self.supabase_key
+
+        if effective_url and effective_key:
             try:
                 import httpx
                 try:
                     resp = httpx.get(
-                        f"{self.supabase_url}/rest/v1/",
-                        headers={"apikey": self.supabase_key, "Authorization": f"Bearer {self.supabase_key}"},
+                        f"{effective_url}/rest/v1/",
+                        headers={"apikey": effective_key, "Authorization": f"Bearer {effective_key}"},
                         timeout=5.0
                     )
                     if resp.status_code in [401, 403] or resp.status_code >= 500:
@@ -90,7 +100,7 @@ class SupabaseConnectionHelper:
                         logger.error(msg)
                         if allow_in_memory_stores():
                             logger.error("ALLOW_IN_MEMORY_FALLBACKS/pytest is set; using StubSupabaseClient")
-                            self._client = StubSupabaseClient(self.supabase_url)
+                            self._client = StubSupabaseClient(effective_url)
                             return self._client
                         raise RuntimeError(msg)
                 except RuntimeError:
@@ -100,13 +110,13 @@ class SupabaseConnectionHelper:
                     logger.error(msg)
                     if allow_in_memory_stores():
                         logger.error("ALLOW_IN_MEMORY_FALLBACKS/pytest is set; using StubSupabaseClient")
-                        self._client = StubSupabaseClient(self.supabase_url)
+                        self._client = StubSupabaseClient(effective_url)
                         return self._client
                     raise RuntimeError(msg) from ping_err
 
                 from supabase import create_client
-                self._client = create_client(self.supabase_url, self.supabase_key)
-                logger.info("Live Supabase client initialized for %s", self.supabase_url)
+                self._client = create_client(effective_url, effective_key)
+                logger.info("Live Supabase client initialized for %s", effective_url)
                 return self._client
             except RuntimeError:
                 raise

@@ -1,6 +1,9 @@
 # ML / AI Engine — Component Spec
 
 **Role:** This is the "brain" — it turns extracted document chunks into a plain-language summary, a list of red flags with citations, a confidence score, and grounded Q&A answers, a **fine-tuned clause-classification model** is worth doing properly (see §2a) rather than falling back to rules-only — just keep the rule-based detector as a fast, explainable complement/fallback rather than replacing it entirely, since the two catch slightly different things (rules catch known exact patterns instantly; a fine-tuned model generalizes to phrasing it hasn't seen before).
+## Redact:
+
+PII is redacted before any document chunk is transmitted to Gemini. The redaction scope includes personal names, DOB, contact information, addresses, policy/customer/account identifiers, and government/financial identifiers. Ordinary financial values and domain terminology such as premium, EMI, rent, loan amount, interest rate, coverage amount, and tenure are retained. Redaction uses field-aware and validated pattern matching rather than substring replacement.
 
 ## 1. Plain-language summary generator
 
