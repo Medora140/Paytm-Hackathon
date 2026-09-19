@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import uuid
 from collections import Counter
@@ -6,11 +7,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import math
-from app.errors import SarvamUnavailableError
 from app.ingestion.embedder import get_embedder
 from app.ml.pii import redact_pii
 from app.ml.sarvam_client import sarvam_client
 from app.schemas import BenchmarkCompareResponse, ChatResponse, CitationItem
+
+logger = logging.getLogger(__name__)
 
 
 def _tokens(value: str) -> List[str]:
@@ -233,7 +235,8 @@ QUESTION: {question}
         try:
             result = sarvam_client.complete_json(prompt)
         except Exception as exc:
-            raise SarvamUnavailableError(f"Chat generation failed: {exc}")
+            logger.warning("Sarvam chat generation failed, using fallback answer: %s", exc)
+            return self._fallback_answer(document_id, question, relevant, language, benchmark_data)
 
         if not result.get("found_in_document") and not result.get("answer"):
             return self._not_found(document_id, language)

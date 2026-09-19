@@ -1,6 +1,8 @@
 import logging
+import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from app.errors import SarvamUnavailableError
+from app.errors import ChunksNotFoundError, SarvamUnavailableError
 from app.ingestion.repository import repository as doc_repository
 from app.ml.confidence_score import calculate_confidence_score
 from app.ml.knowledge_base import RedFlagKnowledgeBase
@@ -58,7 +60,11 @@ class MLService:
 
         # 2. Compute a source-grounded summary through Sarvam when available,
         # otherwise use the deterministic local fallback for analysis continuity.
-        doc_chunks = chunks or get_chunks_for_document(document_id)
+        try:
+            doc_chunks = chunks or get_chunks_for_document(document_id)
+        except ChunksNotFoundError:
+            logger.warning("No chunks available yet for summary on doc '%s'; using fallback summary.", document_id)
+            doc_chunks = []
         try:
             summary = generate_plain_language_summary(
                 document_id=document_id,
@@ -97,7 +103,11 @@ class MLService:
             )
 
         # 2. Detect red flags against Knowledge Base
-        doc_chunks = chunks or get_chunks_for_document(document_id)
+        try:
+            doc_chunks = chunks or get_chunks_for_document(document_id)
+        except ChunksNotFoundError:
+            logger.warning("No chunks available yet for red-flags on doc '%s'; returning empty flags.", document_id)
+            doc_chunks = []
         flags = self.detector.detect_red_flags(document_id, doc_chunks)
 
         # 3. Persist detected flags to Supabase
@@ -216,7 +226,11 @@ class MLService:
         )
 
         # 3. Detect or retrieve flags
-        doc_chunks = chunks or get_chunks_for_document(document_id)
+        try:
+            doc_chunks = chunks or get_chunks_for_document(document_id)
+        except ChunksNotFoundError:
+            logger.warning("No chunks available yet for confidence score on doc '%s'; computing with empty chunks.", document_id)
+            doc_chunks = []
         flags = self.detector.detect_red_flags(document_id, doc_chunks)
 
         # 4. Calculate score with itemized breakdown
@@ -274,14 +288,38 @@ class MLService:
                 logger.warning("Failed to attach benchmark data for chat on doc '%s': %s", document_id, e)
 
         # 3. Generate grounded RAG answer
-        doc_chunks = chunks or get_chunks_for_document(document_id)
-        response = self.chat_engine.chat(
-            document_id=document_id,
-            question=payload.question,
-            chunks=doc_chunks,
-            language=payload.language or "en",
-            benchmark_data=benchmark_data
-        )
+        try:
+            doc_chunks = chunks or get_chunks_for_document(document_id)
+        except ChunksNotFoundError:
+            logger.warning("No chunks available yet for doc '%s'; returning processing message.", document_id)
+            doc_chunks = []
+
+        try:
+            response = self.chat_engine.chat(
+                document_id=document_id,
+                question=payload.question,
+                chunks=doc_chunks,
+                language=payload.language or "en",
+                benchmark_data=benchmark_data
+            )
+        except Exception as chat_err:
+            logger.warning("Chat engine error for doc '%s': %s", document_id, chat_err)
+            lang = payload.language or "en"
+            content = (
+                "यह दस्तावेज़ अभी भी प्रोसेस हो रहा है या चैट इंजन उपलब्ध नहीं है। कृपया थोड़ी देर बाद पुनঃ प्रयास करें।"
+                if lang.lower() in {"hi", "hindi"}
+                else "The document is still being processed or the chat engine is temporarily unavailable. Please try again in a moment."
+            )
+            response = ChatResponse(
+                id=f"msg_{uuid.uuid4().hex[:12]}",
+                document_id=document_id,
+                role="assistant",
+                content=content,
+                cited_chunk_ids=[],
+                citations=[],
+                suggested_policies_referenced=[],
+                created_at=datetime.utcnow(),
+            )
 
         # 4. Persist assistant response to Supabase
         ml_repository.save_chat_message(

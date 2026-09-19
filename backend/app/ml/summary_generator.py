@@ -52,7 +52,24 @@ def _summarise_chunk_texts(chunks: List[Dict[str, Any]]) -> Dict[str, List[str]]
 def generate_fallback_summary(document_id: str, chunks: List[Dict[str, Any]], language: str = "en") -> DocumentSummaryResponse:
     """Create a deterministic summary when remote AI services are not configured."""
     if not chunks:
-        raise SarvamUnavailableError("The document has no extracted text to summarise.")
+        # Document is still being processed — return a placeholder summary
+        placeholder_msg = (
+            "दस्तावेज़ अभी प्रोसेस हो रहा है। कृपया कुछ देर बाद पुनः लोड करें।"
+            if language.lower() in {"hi", "hindi"}
+            else "Document is still being processed. Please reload in a moment."
+        )
+        return DocumentSummaryResponse(
+            id=f"sum_{uuid.uuid4().hex[:12]}",
+            document_id=document_id,
+            language=language.lower() if language else "en",
+            coverage=[placeholder_msg],
+            exclusions=[],
+            key_fees=[],
+            waiting_periods=[],
+            notable_terms=[],
+            model_version="local-fallback-summary",
+            generated_at=datetime.utcnow(),
+        )
 
     fallback = _summarise_chunk_texts(chunks)
     language_tag = language.lower() if language else "en"
@@ -73,7 +90,7 @@ def generate_fallback_summary(document_id: str, chunks: List[Dict[str, Any]], la
 def generate_plain_language_summary(document_id: str, chunks: List[Dict[str, Any]], language: str = "en", document_type: Optional[str] = None) -> DocumentSummaryResponse:
     """Create a structured, source-grounded summary with Sarvam or a local fallback."""
     if not chunks:
-        raise SarvamUnavailableError("The document has no extracted text to summarise.")
+        return generate_fallback_summary(document_id, chunks, language)
 
     if not sarvam_client.api_key:
         return generate_fallback_summary(document_id, chunks, language)

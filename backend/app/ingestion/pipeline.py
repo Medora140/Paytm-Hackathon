@@ -79,9 +79,12 @@ class IngestionPipeline:
         user_id = user_id or "00000000-0000-0000-0000-000000000000"
 
         try:
-            # Stage 1: Store raw file in object storage
-            logger.info("[%s] Stage 1: Uploading raw file to storage...", doc_id)
-            storage_path = self.storage_mgr.store_file(doc_id, filename, file_bytes)
+            # Stage 1: Retrieve already-stored path (file was stored by upload route)
+            logger.info("[%s] Stage 1: Retrieving stored document path...", doc_id)
+            # The upload route already stored the file and created the document row.
+            # We only need to retrieve the storage_path from the existing record.
+            existing_doc = self.repository.get_document(doc_id)
+            storage_path = existing_doc["storage_path"] if existing_doc else self.storage_mgr.store_file(doc_id, filename, file_bytes)
 
             # The upload route already creates the document row; the background
             # pipeline must only update that row as it progresses, never insert it a second time.

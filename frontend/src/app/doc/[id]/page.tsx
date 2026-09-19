@@ -58,6 +58,8 @@ export default function DocumentDashboardPage({
   const [scoreData, setScoreData] = useState<ConfidenceScoreResponse | null>(null);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const analysisRetryCountRef = useRef(0);
+  const MAX_ANALYSIS_RETRIES = 8;
 
   const loadAnalysisData = async (docMeta: DocumentDetailResponse, currentLanguage = lang) => {
     try {
@@ -72,17 +74,34 @@ export default function DocumentDashboardPage({
       const scoreRes = scoreResult.status === "fulfilled" ? scoreResult.value : null;
 
       if (!sumRes || !flagsRes || !scoreRes) {
-        console.warn("Analysis data incomplete, retrying in the next poll...", {
-          sumResult,
-          flagsResult,
-          scoreResult,
-        });
-        setIsProcessing(true);
-        setError(null);
-        setLoading(false);
+        analysisRetryCountRef.current += 1;
+        if (analysisRetryCountRef.current >= MAX_ANALYSIS_RETRIES) {
+          // After enough retries, show an error rather than infinite spinner
+          const failedApis = [
+            !sumRes && "Summary",
+            !flagsRes && "Red Flags",
+            !scoreRes && "Confidence Score",
+          ].filter(Boolean).join(", ");
+          setIsProcessing(false);
+          setLoading(false);
+          setError(`Analysis data could not be loaded (${failedApis}). The document may still be processing. Try refreshing the page.`);
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+        } else {
+          console.warn(
+            `Analysis data incomplete (attempt ${analysisRetryCountRef.current}/${MAX_ANALYSIS_RETRIES}), retrying...`,
+            { sumResult, flagsResult, scoreResult }
+          );
+          setIsProcessing(true);
+          setError(null);
+          setLoading(false);
+        }
         return;
       }
 
+      analysisRetryCountRef.current = 0;
       setSummary(sumRes);
       setRedFlagsData(flagsRes);
       setScoreData(scoreRes);
@@ -90,16 +109,28 @@ export default function DocumentDashboardPage({
       setLoading(false);
       setError(null);
     } catch (err: any) {
-      console.warn("Analysis data still compiling, will retry...", err);
-      setIsProcessing(true);
-      setError(null);
-      setLoading(false);
+      analysisRetryCountRef.current += 1;
+      if (analysisRetryCountRef.current >= MAX_ANALYSIS_RETRIES) {
+        setIsProcessing(false);
+        setLoading(false);
+        setError(err?.message || "Failed to load analysis data after multiple retries. Please refresh.");
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      } else {
+        console.warn("Analysis data still compiling, will retry...", err);
+        setIsProcessing(true);
+        setError(null);
+        setLoading(false);
+      }
     }
   };
 
   const fetchDocument = async (currentLanguage = lang) => {
     if (!docId) return;
     setError(null);
+    analysisRetryCountRef.current = 0;
 
     try {
       const docRes = await getDocument(docId);
@@ -126,7 +157,19 @@ export default function DocumentDashboardPage({
 
         // Start polling if not already active
         if (!pollIntervalRef.current) {
+          let pollCount = 0;
+          const MAX_POLL_COUNT = 60; // 60 × 2s = 2 minutes max
           pollIntervalRef.current = setInterval(async () => {
+            pollCount += 1;
+            if (pollCount >= MAX_POLL_COUNT) {
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              setIsProcessing(false);
+              setError("Document processing is taking too long. Please try refreshing the page or re-upload the document.");
+              return;
+            }
             try {
               const updatedDoc = await getDocument(docId);
               setDocument(updatedDoc);
@@ -149,7 +192,7 @@ export default function DocumentDashboardPage({
             } catch (pollErr) {
               console.warn("Poll check error:", pollErr);
             }
-          }, 1500);
+          }, 2000);
         }
       }
     } catch (err: any) {
