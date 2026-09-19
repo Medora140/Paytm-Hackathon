@@ -2,6 +2,20 @@
 
 This repository is a monorepo: deploy `frontend/` to Vercel and `backend/` to Render. The API persists documents in Supabase Storage; Render's filesystem is intentionally not used as durable storage.
 
+## Deployment layout
+
+```text
+Paytm-Hackathon/
+├── frontend/                 # Vercel Root Directory
+│   ├── package.json          # Node 20+, Next.js commands
+│   └── vercel.json           # Vercel framework declaration
+├── backend/                  # Render Root Directory
+│   ├── app/                  # FastAPI application
+│   ├── requirements.txt      # Production-only Python dependencies
+│   └── Dockerfile            # Starts Uvicorn and installs OCR support
+└── render.yaml               # Optional Render Blueprint
+```
+
 ## 1. Create and publish the deployment branch
 
 The deployment work is on `codex/vercel-render-deployment`.
@@ -26,7 +40,7 @@ Never place `SUPABASE_SERVICE_ROLE_KEY` or `GEMINI_API_KEY` in Vercel: they are 
 
 ## 3. Deploy the API on Render
 
-1. In Render, choose **New → Blueprint** and select this repository and branch. It reads `render.yaml`. Alternatively, create a **Web Service** with runtime **Docker**, root directory `backend`, Dockerfile path `./Dockerfile`, and health-check path `/health`.
+1. In Render, choose **New → Blueprint** and select this repository and branch. It reads `render.yaml`. Alternatively, create a **Web Service** with runtime **Docker**, root directory `backend`, Dockerfile path `./Dockerfile`, and health-check path `/health`. Do not enter a Start Command: the Dockerfile already starts Uvicorn with Render's `PORT` variable.
 2. Set these secret environment variables in Render:
 
    | Variable | Value |
@@ -45,7 +59,7 @@ The Docker image installs Tesseract, so OCR of scanned PDFs works on Render. The
 ## 4. Deploy the frontend on Vercel
 
 1. In Vercel, import the same repository and select `codex/vercel-render-deployment` as the production branch.
-2. Set **Root Directory** to `frontend` and leave the framework preset as Next.js.
+2. Set **Root Directory** to `frontend` and leave the framework preset as Next.js. Leave Vercel's install, build, output, and development commands at their defaults.
 3. Add these environment variables for Production, Preview, and Development as appropriate:
 
    | Variable | Value |

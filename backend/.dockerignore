@@ -14,4 +14,3 @@ read_*.py
 experiments/
 storage/
 *.db
-*.json
