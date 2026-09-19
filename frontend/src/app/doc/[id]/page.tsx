@@ -187,7 +187,7 @@ export default function DocumentDashboardPage({
                 {!isExtracting ? <CheckCircle2 className="w-3.5 h-3.5" /> : "1"}
               </div>
               <span className={!isExtracting ? "text-ink font-semibold" : "text-ink font-bold"}>
-                Multilingual Text & OCR Extraction (Hindi & English)
+                {t.doc.progressExtraction}
               </span>
             </div>
 
@@ -196,7 +196,7 @@ export default function DocumentDashboardPage({
                 {isEmbedding || isFinalizing ? <CheckCircle2 className="w-3.5 h-3.5" /> : "2"}
               </div>
               <span className={isChunking ? "text-ink font-bold" : "text-mute"}>
-                AI Clause Segmentation & Section Boundary Detection
+                {t.doc.progressChunking}
               </span>
             </div>
 
@@ -205,7 +205,7 @@ export default function DocumentDashboardPage({
                 {isFinalizing ? <CheckCircle2 className="w-3.5 h-3.5" /> : "3"}
               </div>
               <span className={isEmbedding ? "text-ink font-bold" : "text-mute"}>
-                Vector Indexing & Deep Clause Embeddings
+                {t.doc.progressEmbedding}
               </span>
             </div>
 
@@ -214,7 +214,7 @@ export default function DocumentDashboardPage({
                 "4"
               </div>
               <span className={isFinalizing ? "text-ink font-bold" : "text-mute"}>
-                Red-Flag Reasoning & Market Benchmark Comparison
+                {t.doc.progressFinalizing}
               </span>
             </div>
           </div>
@@ -223,7 +223,7 @@ export default function DocumentDashboardPage({
             <div className="bg-primary h-full rounded-full animate-pulse w-3/4" />
           </div>
           <p className="text-[11px] text-mute">
-            Please keep this page open. Analysis updates automatically in real-time.
+            {t.doc.progressMessage}
           </p>
         </div>
       </div>
@@ -237,9 +237,9 @@ export default function DocumentDashboardPage({
         <div className="w-14 h-14 rounded-full bg-negative/10 text-negative mx-auto flex items-center justify-center">
           <AlertCircle className="w-7 h-7" />
         </div>
-        <h2 className="text-xl font-black text-ink">Unable to load document analysis</h2>
+        <h2 className="text-xl font-black text-ink">{t.doc.loadErrorTitle}</h2>
         <p className="text-xs text-body">
-          {error || "An unexpected error occurred while communicating with the analysis pipeline."}
+          {error || t.doc.loadErrorText}
         </p>
         <button
           onClick={() => fetchDocument(lang)}

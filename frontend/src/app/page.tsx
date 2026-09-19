@@ -56,7 +56,7 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-2">
           <Globe className="w-5 h-5 text-primary-deep" />
-          <span>English &amp; हिंदी Multilingual OCR</span>
+          <span>{t.home.multilingualOcr}</span>
         </div>
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-warning-deep" />

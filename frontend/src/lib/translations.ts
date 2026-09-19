@@ -35,6 +35,7 @@ export interface TranslationDict {
     feat3Desc: string;
     feat4Title: string;
     feat4Desc: string;
+    multilingualOcr: string;
   };
 
   // Upload
@@ -54,6 +55,7 @@ export interface TranslationDict {
     privacyNote: string;
     uploadButton: string;
     analyzingButton: string;
+    uploadFailed: string;
   };
 
   // Dashboard / Doc Overview
@@ -90,6 +92,13 @@ export interface TranslationDict {
     assistantDescription: string;
     openChatbot: string;
     viewAlternatives: string;
+    progressExtraction: string;
+    progressChunking: string;
+    progressEmbedding: string;
+    progressFinalizing: string;
+    progressMessage: string;
+    loadErrorTitle: string;
+    loadErrorText: string;
   };
 
   // Comparison & Better Policies
@@ -165,6 +174,7 @@ export const translations: Record<Language, TranslationDict> = {
       feat3Desc: "Ask any detailed question about your uploaded document or explore why recommended competitor policies offer higher savings and broader coverage.",
       feat4Title: "Full Multilingual English & Hindi",
       feat4Desc: "Upload documents written in Hindi or English and switch the entire platform into pure Hindi at any moment.",
+      multilingualOcr: "English & हिंदी Multilingual OCR",
     },
     upload: {
       pageTitle: "Upload Your Financial Policy or Agreement",
@@ -182,6 +192,7 @@ export const translations: Record<Language, TranslationDict> = {
       privacyNote: "Your data is processed in strict compliance with the Digital Personal Data Protection (DPDP) Act. All Personally Identifiable Information (PII) is masked.",
       uploadButton: "Start AI Analysis",
       analyzingButton: "Analyzing Policy...",
+      uploadFailed: "Upload Failed",
     },
     doc: {
       policyAnalysis: "Policy Analysis",
@@ -216,6 +227,13 @@ export const translations: Record<Language, TranslationDict> = {
       assistantDescription: "Have questions about clauses, deductions, or whether an alternative policy is better for you? Chat with our AI grounded directly in your document.",
       openChatbot: "Open Policy AI Chat",
       viewAlternatives: "View Market Benchmarks",
+      progressExtraction: "Multilingual Text & OCR Extraction (Hindi & English)",
+      progressChunking: "AI Clause Segmentation & Section Boundary Detection",
+      progressEmbedding: "Vector Indexing & Deep Clause Embeddings",
+      progressFinalizing: "Red-Flag Reasoning & Market Benchmark Comparison",
+      progressMessage: "Please keep this page open. Analysis updates automatically in real time.",
+      loadErrorTitle: "Unable to load document analysis",
+      loadErrorText: "An unexpected error occurred while communicating with the analysis pipeline.",
     },
     compare: {
       title: "Market Intelligence & Better Policy Recommendations",
@@ -291,6 +309,7 @@ export const translations: Record<Language, TranslationDict> = {
       feat3Desc: "अपनी अपलोड की गई पॉलिसी या सुझाई गई वैकल्पिक पॉलिसियों के बारे में कोई भी प्रश्न विस्तार से पूछें।",
       feat4Title: "पूर्ण हिंदी और अंग्रेजी भाषा समर्थन",
       feat4Desc: "हिंदी या अंग्रेजी में दस्तावेज़ अपलोड करें और कभी भी पूरी वेबसाइट को शुद्ध हिंदी में बदलें।",
+      multilingualOcr: "अंग्रेज़ी & हिंदी मल्टीलिंगुअल OCR",
     },
     upload: {
       pageTitle: "अपनी पॉलिसी या अनुबंध अपलोड करें",
@@ -308,6 +327,7 @@ export const translations: Record<Language, TranslationDict> = {
       privacyNote: "आपका डेटा डिजिटल पर्सनल डेटा प्रोटेक्शन (DPDP) अधिनियम के तहत सुरक्षित है। सभी व्यक्तिगत पहचान (PII) छिपाई जाती है।",
       uploadButton: "एआई विश्लेषण शुरू करें",
       analyzingButton: "विश्लेषण जारी है...",
+      uploadFailed: "अपलोड विफल",
     },
     doc: {
       policyAnalysis: "पॉलिसी विश्लेषण",
@@ -342,6 +362,13 @@ export const translations: Record<Language, TranslationDict> = {
       assistantDescription: "क्या आपके पास क्लॉज, कटौतियों या बेहतर पॉलिसी विकल्पों के बारे में सवाल हैं? सीधे अपने दस्तावेज़ पर आधारित AI से पूछें।",
       openChatbot: "पॉलिसी AI चैट खोलें",
       viewAlternatives: "बाजार मानक देखें",
+      progressExtraction: "बहुभाषी टेक्स्ट और OCR निष्कर्षण (हिंदी और अंग्रेज़ी)",
+      progressChunking: "एआई क्लॉज विभाजन और सेक्शन बाउंड्री पहचान",
+      progressEmbedding: "वेक्टर इंडेक्सिंग और गहन क्लॉज एम्बेडिंग",
+      progressFinalizing: "रेड-फ्लैग कारण विश्लेषण और मार्केट बेंचमार्क तुलना",
+      progressMessage: "कृपया इस पेज को खुला रखें। विश्लेषण स्वचालित रूप से अपडेट होता रहता है।",
+      loadErrorTitle: "दस्तावेज़ का विश्लेषण लोड नहीं हो सका",
+      loadErrorText: "विश्लेषण पाइपलाइन के साथ संवाद करते समय एक अप्रत्याशित त्रुटि हुई।",
     },
     compare: {
       title: "बाजार तुलना और बेहतर पॉलिसी सुझाव",

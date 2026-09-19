@@ -139,7 +139,7 @@ export default function UploadForm({
           <div className="w-12 h-12 rounded-full bg-negative/10 text-negative mx-auto flex items-center justify-center">
             <AlertCircle className="w-6 h-6" />
           </div>
-          <h2 className="text-lg font-bold text-ink">Upload Failed</h2>
+          <h2 className="text-lg font-bold text-ink">{t.upload.uploadFailed || "Upload Failed"}</h2>
           <p className="text-xs text-body max-w-md mx-auto">
             {errorMessage}
           </p>
@@ -155,9 +155,9 @@ export default function UploadForm({
         /* Multi-stage loading progress bar */
         <div className="bg-canvas rounded-3xl p-8 border border-ink/10 shadow-sm space-y-6">
           <div className="text-center space-y-1">
-            <h2 className="text-xl font-black text-ink">Analyzing Your Document</h2>
+            <h2 className="text-xl font-black text-ink">{t.upload.analyzingButton || "Analyzing Your Document"}</h2>
             <p className="text-xs text-body">
-              Auto-identifying document type, extracting Hindi/English text, chunking clauses, and checking market alternatives
+              {t.upload.stageAnalyzing || "Auto-identifying document type, extracting multilingual text, chunking clauses, and checking market alternatives"}
             </p>
           </div>
 
