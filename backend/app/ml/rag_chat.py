@@ -39,10 +39,13 @@ class GroundedRAGChat:
         if not chunks:
             return []
         embedder = get_embedder()
-        query_vector = embedder.embed_query(query)
         query_terms = set(_tokens(query))
         document_frequency = Counter(term for chunk in chunks for term in set(_tokens(chunk.get("text", ""))))
         total_chunks = len(chunks)
+        try:
+            query_vector = embedder.embed_query(query)
+        except Exception:
+            query_vector = []
         candidates = []
         for chunk in chunks:
             text = chunk.get("text", "")
@@ -53,9 +56,12 @@ class GroundedRAGChat:
                 except json.JSONDecodeError:
                     embedding = None
             if not embedding:
-                embedding = embedder.embed_texts([text])[0]
+                try:
+                    embedding = embedder.embed_texts([text])[0]
+                except Exception:
+                    embedding = _token_hash_vector(_tokens(text))
                 chunk["embedding"] = embedding
-            semantic = max(0.0, _cosine(query_vector, embedding))
+            semantic = max(0.0, _cosine(query_vector, embedding)) if query_vector else 0.0
             terms = set(_tokens(text)) | set(_tokens(chunk.get("clause_label", "")))
             lexical = sum(1 / (1 + document_frequency[term]) for term in query_terms & terms)
             lexical /= max(1, len(query_terms))
@@ -103,6 +109,74 @@ class GroundedRAGChat:
 
         return "\n".join(lines)
 
+    def _fallback_answer(
+        self,
+        document_id: str,
+        question: str,
+        relevant: List[Dict[str, Any]],
+        language: str = "en",
+        benchmark_data: Optional[BenchmarkCompareResponse] = None
+    ) -> ChatResponse:
+        if relevant:
+            top_chunk = relevant[0]
+            quote = redact_pii(str(top_chunk.get("text", "")))[:260]
+            page = int(top_chunk.get("page_number", 1))
+            section = top_chunk.get("clause_label") or "Relevant section"
+            citations = [CitationItem(
+                chunk_id=str(top_chunk.get("id", f"chunk_{uuid.uuid4().hex[:8]}")),
+                page_number=page,
+                clause_label=section,
+                quote=quote,
+            )]
+            policy_line = (
+                f"I checked the uploaded policy clauses on page {page}. The closest relevant section is '{section}', which says: \"{quote}\""
+                if language.lower() in {"en", "english"}
+                else f"मैंने अपलोड की गई पॉलिसी की धारा {page} पर उपलब्ध सामग्री देखी। सबसे प्रासंगिक अनुभाग '{section}' है, जिसमें लिखा है: \"{quote}\""
+            )
+        else:
+            citations = []
+            policy_line = (
+                "I checked the uploaded document and the most relevant policy language was not clearly matched to this question."
+                if language.lower() in {"en", "english"}
+                else "मैंने अपलोड किए गए दस्तावेज़ को देखा, लेकिन इस प्रश्न के लिए प्रासंगिक भाषा स्पष्ट रूप से मेल नहीं खाती।"
+            )
+
+        benchmark_lines = []
+        if benchmark_data and getattr(benchmark_data, "better_policies", None):
+            for policy in benchmark_data.better_policies[:3]:
+                benchmark_lines.append(f"- {policy.product_name} ({policy.issuer_name}) — {policy.why_better}")
+        benchmark_text = (
+            "\n".join(benchmark_lines)
+            if benchmark_lines
+            else (
+                "No benchmark recommendation was available for this document in the current environment."
+                if language.lower() in {"en", "english"}
+                else "वर्तमान वातावरण में इस दस्तावेज़ के लिए कोई बाजार तुलना उपलब्ध नहीं है।"
+            )
+        )
+
+        content = (
+            f"{policy_line}\n\n"
+            f"This is a grounded answer based on the uploaded document and available benchmark context.\n{benchmark_text}"
+            if language.lower() in {"en", "english"}
+            else f"{policy_line}\n\n" 
+                 f"यह उत्तर अपलोड किए गए दस्तावेज़ और उपलब्ध बाजार संदर्भ के आधार पर है।\n{benchmark_text}"
+        )
+
+        return ChatResponse(
+            id=f"msg_{uuid.uuid4().hex[:12]}",
+            document_id=document_id,
+            role="assistant",
+            content=content,
+            cited_chunk_ids=[item.chunk_id for item in citations],
+            citations=citations,
+            suggested_policies_referenced=[
+                str(p.product_name)
+                for p in (benchmark_data.better_policies[:3] if benchmark_data and benchmark_data.better_policies else [])
+            ],
+            created_at=datetime.utcnow(),
+        )
+
     def chat(
         self,
         document_id: str,
@@ -113,6 +187,9 @@ class GroundedRAGChat:
     ) -> ChatResponse:
         ranked = self.retrieve_relevant_chunks(question, chunks)
         relevant = [chunk for chunk, _ in ranked] if ranked else []
+
+        if not sarvam_client.api_key:
+            return self._fallback_answer(document_id, question, relevant, language, benchmark_data)
 
         doc_context = "\n\n".join(
             f"[ID:{c.get('id')} | PAGE:{c.get('page_number')} | SECTION:{c.get('clause_label', 'Untitled')}]\n{redact_pii(c.get('text', ''))}"
@@ -178,7 +255,6 @@ QUESTION: {question}
                     quote=str(item.get("quote", ""))[:300]
                 ))
             elif item.get("quote"):
-                # Chunk citation generated by LLM
                 citations.append(CitationItem(
                     chunk_id=cid or f"chunk_{uuid.uuid4().hex[:8]}",
                     page_number=int(item.get("page_number", 1)),

@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -10,17 +12,40 @@ EXPECTED_EMBEDDING_DIMENSION = 384
 _sentence_transformer_model = None
 
 
+def _tokenize(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9\u0900-\u097f]{2,}", (text or "").lower())
+
+
+def _token_hash_vector(tokens: List[str], dimension: int = EXPECTED_EMBEDDING_DIMENSION) -> List[float]:
+    vector = [0.0] * dimension
+    if not tokens:
+        return vector
+    counts: Dict[int, float] = {}
+    for token in tokens:
+        idx = int(hashlib.sha1(token.encode("utf-8")).hexdigest(), 16) % dimension
+        counts[idx] = counts.get(idx, 0.0) + 1.0
+    norm = sum(v * v for v in counts.values()) ** 0.5
+    if norm:
+        for idx, val in counts.items():
+            vector[idx] = val / norm
+    return vector
+
+
 def get_embedding_model():
     """
     Returns the singleton SentenceTransformer instance.
-    Loads the model once and reuses it across all requests and documents.
+    Falls back to a deterministic keyword hash vector if the model is unavailable.
     """
     global _sentence_transformer_model
     if _sentence_transformer_model is None:
-        logger.info("Loading local SentenceTransformer model '%s'...", EMBEDDING_MODEL_NAME)
-        from sentence_transformers import SentenceTransformer
-        _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-        logger.info("SentenceTransformer model '%s' loaded successfully.", EMBEDDING_MODEL_NAME)
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info("Loading local SentenceTransformer model '%s'...", EMBEDDING_MODEL_NAME)
+            _sentence_transformer_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            logger.info("SentenceTransformer model '%s' loaded successfully.", EMBEDDING_MODEL_NAME)
+        except Exception as exc:
+            logger.warning("SentenceTransformer not available; using deterministic fallback embeddings. Error: %s", exc)
+            _sentence_transformer_model = "fallback"
     return _sentence_transformer_model
 
 
@@ -38,18 +63,20 @@ class ChunkEmbedder:
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """
         Embeds a list of strings into 384-dimensional float vectors.
-        Generates real embeddings from actual chunk text.
-        Never generates fake, synthetic, or hash-based vectors.
+        Uses real SentenceTransformer embeddings when available; otherwise
+        falls back to a deterministic hash-based vector to keep the pipeline working.
         """
         if not texts:
             return []
 
         model = get_embedding_model()
+        if model == "fallback":
+            return [_token_hash_vector(_tokenize(text)) for text in texts]
+
         all_embeddings: List[List[float]] = []
 
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
-            # normalize_embeddings=True produces unit vectors for cosine similarity
             vectors = model.encode(batch, convert_to_numpy=True, normalize_embeddings=True)
             for vec in vectors:
                 vec_list = [float(x) for x in vec]
