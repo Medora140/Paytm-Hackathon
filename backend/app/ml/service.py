@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from app.errors import SarvamUnavailableError
 from app.ingestion.repository import repository as doc_repository
 from app.ml.confidence_score import calculate_confidence_score
 from app.ml.knowledge_base import RedFlagKnowledgeBase
@@ -7,7 +8,10 @@ from app.ml.chunk_resolver import get_chunks_for_document
 from app.ml.rag_chat import GroundedRAGChat
 from app.ml.red_flag_detector import RuleBasedRedFlagDetector
 from app.ml.repository import ml_repository
-from app.ml.summary_generator import generate_plain_language_summary
+from app.ml.summary_generator import (
+    generate_fallback_summary,
+    generate_plain_language_summary,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -52,13 +56,22 @@ class MLService:
             logger.info("Serving cached summary for doc '%s' (lang=%s)", document_id, language)
             return cached
 
-        # 2. Compute a source-grounded summary through Sarvam
+        # 2. Compute a source-grounded summary through Sarvam when available,
+        # otherwise use the deterministic local fallback for analysis continuity.
         doc_chunks = chunks or get_chunks_for_document(document_id)
-        summary = generate_plain_language_summary(
-            document_id=document_id,
-            chunks=doc_chunks,
-            language=language
-        )
+        try:
+            summary = generate_plain_language_summary(
+                document_id=document_id,
+                chunks=doc_chunks,
+                language=language
+            )
+        except SarvamUnavailableError:
+            logger.warning("Sarvam unavailable for summary generation on doc '%s'; using local fallback summary.", document_id)
+            summary = generate_fallback_summary(
+                document_id=document_id,
+                chunks=doc_chunks,
+                language=language
+            )
 
         # 3. Persist generated summary to Supabase
         ml_repository.save_summary(summary)
